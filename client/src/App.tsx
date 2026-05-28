@@ -7,7 +7,7 @@ import { useCollapsedState } from "./hooks/useCollapsed";
 import { useShowCompleted } from "./hooks/useShowCompleted";
 import { useToast } from "./hooks/useToast";
 import { useTodos } from "./hooks/useTodos";
-import { countCompleted, filterCompleted } from "./lib/treeUtils";
+import { countCompleted, filterCompleted, buildDirectChildProgressMap } from "./lib/treeUtils";
 
 export default function App() {
   const { user, loading: authLoading, logout } = useAuth();
@@ -25,6 +25,7 @@ export default function App() {
     [tree, showCompleted]
   );
   const completedCount = useMemo(() => countCompleted(tree), [tree]);
+  const childProgressMap = useMemo(() => buildDirectChildProgressMap(tree), [tree]);
 
   const handleAddRoot = async (e: FormEvent) => {
     e.preventDefault();
@@ -55,7 +56,7 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="flex h-screen items-center justify-center text-zinc-500">Loading...</div>
+      <div className="flex h-dvh items-center justify-center text-zinc-500">Loading...</div>
     );
   }
 
@@ -64,7 +65,7 @@ export default function App() {
   }
 
   return (
-    <div className="mx-auto flex h-screen max-w-2xl flex-col overflow-hidden px-4 py-6 sm:py-10">
+    <div className="mx-auto flex h-dvh max-w-2xl flex-col overflow-hidden px-4 py-6 sm:py-10">
       <header className="mb-6 flex shrink-0 items-baseline justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-2xl font-medium text-zinc-100">Todos</h1>
@@ -105,7 +106,10 @@ export default function App() {
         </button>
       </form>
 
-      <div ref={listRef} className="todo-scroll min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={listRef}
+        className="todo-scroll min-h-0 flex-1 overflow-y-auto pb-[max(1rem,env(safe-area-inset-bottom))]"
+      >
         {loading && <p className="text-zinc-500">Loading...</p>}
         {error && <p className="text-red-400">{error}</p>}
 
@@ -115,6 +119,7 @@ export default function App() {
             scrollContainerRef={listRef}
             scrollToTodoId={scrollToTodoId}
             onScrolledToTodo={() => setScrollToTodoId(null)}
+            childProgressMap={childProgressMap}
             onUpdate={handleUpdate}
             onCreate={handleCreateChild}
             onDelete={handleDelete}

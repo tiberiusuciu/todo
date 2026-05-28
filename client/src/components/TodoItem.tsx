@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, type DragEvent, type FormEvent, type KeyboardEvent, type RefObject } from "react";
-import type { TodoNode } from "../lib/treeUtils";
+import type { DirectChildProgress, TodoNode } from "../lib/treeUtils";
 import { hasChildren } from "../lib/treeUtils";
 import { TodoSiblingList } from "./TodoSiblingList";
 import { EmojiPickerPopover } from "./EmojiPickerPopover";
@@ -12,6 +12,7 @@ type Props = {
   scrollContainerRef: RefObject<HTMLDivElement | null>;
   scrollToTodoId: string | null;
   onScrolledToTodo: () => void;
+  childProgressMap: Map<string, DirectChildProgress>;
   isDragging: boolean;
   isDropTarget: boolean;
   onDragStart: () => void;
@@ -37,6 +38,7 @@ export function TodoItem({
   scrollContainerRef,
   scrollToTodoId,
   onScrolledToTodo,
+  childProgressMap,
   isDragging,
   isDropTarget,
   onDragStart,
@@ -70,6 +72,7 @@ export function TodoItem({
   const canMoveUp = siblingIndex > 0;
   const canMoveDown = siblingIndex < siblings.length - 1;
   const isPending = !!node.emojiPending;
+  const childProgress = childProgressMap.get(node._id);
 
   useEffect(() => {
     setTitle(node.title);
@@ -191,7 +194,13 @@ export function TodoItem({
             onSelect={(emoji) => onUpdate(node._id, { emoji })}
           />
 
-          <div className="min-w-0 flex-1 [@media(hover:hover)]:group-hover:pr-[5.5rem] [@media(hover:hover)]:group-focus-within:pr-[5.5rem]">
+          <div
+            className={`min-w-0 flex-1 ${
+              childProgress
+                ? "pr-3 [@media(hover:hover)]:group-hover:pr-[7rem] [@media(hover:hover)]:group-focus-within:pr-[7rem]"
+                : "[@media(hover:hover)]:group-hover:pr-[5.5rem] [@media(hover:hover)]:group-focus-within:pr-[5.5rem]"
+            }`}
+          >
             {editingTitle ? (
               <input
                 ref={titleRef}
@@ -202,16 +211,29 @@ export function TodoItem({
                 className="w-full rounded bg-zinc-800 px-2 py-1 text-base text-zinc-100 outline-none ring-1 ring-zinc-600"
               />
             ) : (
-              <button
-                type="button"
-                onClick={() => !isPending && setEditingTitle(true)}
-                disabled={isPending}
-                className={`block w-full text-left text-base disabled:cursor-default ${
-                  node.completed ? "line-through text-zinc-500" : "text-zinc-100"
-                }`}
-              >
-                {node.title}
-              </button>
+              <div className="flex min-w-0 items-baseline gap-1">
+                <button
+                  type="button"
+                  onClick={() => !isPending && setEditingTitle(true)}
+                  disabled={isPending}
+                  className={`min-w-0 flex-1 text-left text-base disabled:cursor-default ${
+                    node.completed ? "line-through text-zinc-500" : "text-zinc-100"
+                  }`}
+                >
+                  {node.title}
+                </button>
+                {childProgress && (
+                  <span
+                    className={`mr-1 shrink-0 text-[10px] tabular-nums ${
+                      childProgress.done === childProgress.total
+                        ? "text-zinc-400"
+                        : "text-zinc-500"
+                    }`}
+                  >
+                    {childProgress.done}/{childProgress.total}
+                  </span>
+                )}
+              </div>
             )}
 
             {editingNotes ? (
@@ -238,7 +260,7 @@ export function TodoItem({
           </div>
 
           <div
-            className={`todo-item-controls rounded-md bg-zinc-950/95 px-0.5 ${isPending ? "pointer-events-none opacity-40" : ""}`}
+            className={`todo-item-controls rounded-md bg-zinc-950/95 px-0.5 ${childProgress ? "[@media(hover:none)]:ml-1" : ""} ${isPending ? "pointer-events-none opacity-40" : ""}`}
           >
             <button
               type="button"
@@ -332,6 +354,7 @@ export function TodoItem({
           scrollContainerRef={scrollContainerRef}
           scrollToTodoId={scrollToTodoId}
           onScrolledToTodo={onScrolledToTodo}
+          childProgressMap={childProgressMap}
           onUpdate={onUpdate}
           onCreate={onCreate}
           onDelete={onDelete}

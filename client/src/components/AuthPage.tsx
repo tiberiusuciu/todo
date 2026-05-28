@@ -28,7 +28,7 @@ export function AuthPage() {
   };
 
   return (
-    <div className="mx-auto flex h-screen max-w-sm flex-col justify-center px-4">
+    <div className="mx-auto flex h-dvh max-w-sm flex-col justify-center px-4">
       <h1 className="mb-8 text-center text-2xl font-medium text-zinc-100">Todos</h1>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
