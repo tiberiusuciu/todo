@@ -1,5 +1,5 @@
 import { type RefObject } from "react";
-import type { TodoNode } from "../lib/treeUtils";
+import type { DirectChildProgress, TodoNode } from "../lib/treeUtils";
 import { TodoSiblingList } from "./TodoSiblingList";
 
 type Props = {
@@ -7,6 +7,7 @@ type Props = {
   scrollContainerRef: RefObject<HTMLDivElement | null>;
   scrollToTodoId: string | null;
   onScrolledToTodo: () => void;
+  childProgressMap: Map<string, DirectChildProgress>;
   onUpdate: (id: string, data: { title?: string; notes?: string; emoji?: string; completed?: boolean }) => Promise<void>;
   onCreate: (parentId: string, title: string) => Promise<boolean>;
   onDelete: (id: string, hasChildren: boolean) => Promise<void>;
@@ -21,6 +22,7 @@ export function TodoTree({
   scrollContainerRef,
   scrollToTodoId,
   onScrolledToTodo,
+  childProgressMap,
   onUpdate,
   onCreate,
   onDelete,
@@ -43,6 +45,7 @@ export function TodoTree({
       scrollContainerRef={scrollContainerRef}
       scrollToTodoId={scrollToTodoId}
       onScrolledToTodo={onScrolledToTodo}
+      childProgressMap={childProgressMap}
       onUpdate={onUpdate}
       onCreate={onCreate}
       onDelete={onDelete}

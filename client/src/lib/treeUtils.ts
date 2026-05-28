@@ -55,3 +55,26 @@ export function countCompleted(nodes: TodoNode[]): number {
   }
   return count;
 }
+
+export type DirectChildProgress = { done: number; total: number };
+
+export function buildDirectChildProgressMap(
+  nodes: TodoNode[]
+): Map<string, DirectChildProgress> {
+  const map = new Map<string, DirectChildProgress>();
+
+  function walk(list: TodoNode[]) {
+    for (const node of list) {
+      if (node.children.length > 0) {
+        map.set(node._id, {
+          done: node.children.filter((c) => c.completed).length,
+          total: node.children.length,
+        });
+      }
+      walk(node.children);
+    }
+  }
+
+  walk(nodes);
+  return map;
+}
