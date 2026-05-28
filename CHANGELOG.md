@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/tiberiusuciu/todos/compare/v1.2.1...v1.3.0) (2026-05-28)
+
+
+### Features
+
+* **tasks:** Add improved dnd ux ([02cf49b](https://github.com/tiberiusuciu/todos/commit/02cf49b52cae763f5589df5bf3589f4c71e70717))
+
 ## [1.2.1](https://github.com/tiberiusuciu/todos/compare/v1.2.0...v1.2.1) (2026-05-28)
 
 
