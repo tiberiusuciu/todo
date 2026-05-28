@@ -51,6 +51,10 @@ body {
     background-repeat: no-repeat;
   }
 
+  .todo-item-actions {
+    @apply shrink-0;
+  }
+
   .todo-item-controls {
     @apply flex shrink-0 items-center gap-0.5 opacity-100;
   }
@@ -66,7 +70,7 @@ body {
 
   @media (hover: hover) and (pointer: fine) {
     .todo-item-controls {
-      @apply pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 opacity-0 transition-opacity;
+      @apply pointer-events-none absolute right-6 top-1/2 -translate-y-1/2 opacity-0 transition-opacity;
     }
 
     .todo-item:hover .todo-item-controls,
@@ -104,7 +108,20 @@ body {
     @apply pointer-events-none opacity-90;
   }
 
-  .todo-item-draggable[aria-grabbed="true"] {
-    @apply cursor-grabbing;
+  .todo-drag-handle {
+    @apply flex h-6 w-6 shrink-0 touch-none items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300;
+  }
+
+  .todo-drag-handle:not(:disabled) {
+    @apply cursor-grab active:cursor-grabbing;
+  }
+
+  .todo-drag-handle:disabled {
+    @apply cursor-not-allowed opacity-40;
+  }
+
+  .todo-preview-expand {
+    overflow: hidden;
+    transition: height 180ms linear;
   }
 }
