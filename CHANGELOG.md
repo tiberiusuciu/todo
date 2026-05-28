@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/tiberiusuciu/todos/compare/v1.2.0...v1.2.1) (2026-05-28)
+
+
+### Bug Fixes
+
+* **metadata:** Add more metadata to the app ([aeb946c](https://github.com/tiberiusuciu/todos/commit/aeb946cce6748a3429a427db0a9a58952828ed2f))
+
 # [1.2.0](https://github.com/tiberiusuciu/todos/compare/v1.1.0...v1.2.0) (2026-05-28)
 
 
