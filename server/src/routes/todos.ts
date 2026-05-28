@@ -95,6 +95,13 @@ router.patch("/reorder", async (req: Request, res: Response) => {
   }
 
   const ids = items.map(({ id }: { id: string }) => id);
+  for (const id of ids) {
+    if (!mongoose.isValidObjectId(id)) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
+  }
+
   const owned = await Todo.countDocuments({ _id: { $in: ids }, userId });
   if (owned !== ids.length) {
     res.status(404).json({ error: "One or more todos not found" });

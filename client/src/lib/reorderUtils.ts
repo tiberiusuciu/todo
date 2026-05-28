@@ -6,12 +6,17 @@ function sortSiblings(siblings: TodoNode[]): TodoNode[] {
   );
 }
 
+function isPendingNode(node: TodoNode): boolean {
+  return !!node.emojiPending || node._id.startsWith("temp-");
+}
+
 export function getReorderUpdates(
   siblings: TodoNode[],
   id: string,
   direction: "up" | "down"
 ): { id: string; order: number }[] | null {
   const sorted = sortSiblings(siblings);
+  if (sorted.some(isPendingNode)) return null;
   const idx = sorted.findIndex((s) => s._id === id);
   if (idx === -1) return null;
 
@@ -32,6 +37,7 @@ export function getReorderUpdatesFromDrag(
   if (dragId === targetId) return null;
 
   const sorted = sortSiblings(siblings);
+  if (sorted.some(isPendingNode)) return null;
   const fromIdx = sorted.findIndex((s) => s._id === dragId);
   const toIdx = sorted.findIndex((s) => s._id === targetId);
   if (fromIdx === -1 || toIdx === -1) return null;

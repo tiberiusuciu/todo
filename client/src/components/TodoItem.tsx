@@ -1,11 +1,14 @@
-import { useState, useRef, useEffect, useLayoutEffect, type DragEvent, type FormEvent, type KeyboardEvent, type RefObject } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, type FormEvent, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
+import { useDraggable } from "@dnd-kit/core";
 import type { DirectChildProgress, TodoNode } from "../lib/treeUtils";
 import { hasChildren } from "../lib/treeUtils";
+import type { DropPreview } from "../lib/moveUtils";
 import { TodoSiblingList } from "./TodoSiblingList";
 import { EmojiPickerPopover } from "./EmojiPickerPopover";
 
 type Props = {
   node: TodoNode;
+  listParentId: string | null;
   depth: number;
   siblings: TodoNode[];
   siblingIndex: number;
@@ -13,25 +16,27 @@ type Props = {
   scrollToTodoId: string | null;
   onScrolledToTodo: () => void;
   childProgressMap: Map<string, DirectChildProgress>;
-  isDragging: boolean;
-  isDropTarget: boolean;
-  onDragStart: () => void;
-  onDragEnd: () => void;
-  onDragEnter: () => void;
-  onDrop: () => void;
+  activeId: string | null;
+  dropPreview: DropPreview | null;
+  dragRowHeight: number;
+  showInsertGhost: boolean;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onUpdate: (id: string, data: { title?: string; notes?: string; emoji?: string; completed?: boolean }) => Promise<void>;
   onCreate: (parentId: string, title: string) => Promise<boolean>;
   onDelete: (id: string, hasChildren: boolean) => Promise<void>;
   onMoveSibling: (siblings: TodoNode[], id: string, direction: "up" | "down") => Promise<void>;
-  onReorderByDrag: (siblings: TodoNode[], dragId: string, targetId: string) => Promise<void>;
   isCollapsed: (id: string) => boolean;
   toggleCollapsed: (id: string) => void;
 };
 
+function stopDrag(e: PointerEvent) {
+  e.stopPropagation();
+}
+
 export function TodoItem({
   node,
+  listParentId,
   depth,
   siblings,
   siblingIndex,
@@ -39,19 +44,16 @@ export function TodoItem({
   scrollToTodoId,
   onScrolledToTodo,
   childProgressMap,
-  isDragging,
-  isDropTarget,
-  onDragStart,
-  onDragEnd,
-  onDragEnter,
-  onDrop,
+  activeId,
+  dropPreview,
+  dragRowHeight,
+  showInsertGhost,
   onMoveUp,
   onMoveDown,
   onUpdate,
   onCreate,
   onDelete,
   onMoveSibling,
-  onReorderByDrag,
   isCollapsed,
   toggleCollapsed,
 }: Props) {
@@ -66,13 +68,36 @@ export function TodoItem({
   const notesRef = useRef<HTMLTextAreaElement>(null);
   const childRef = useRef<HTMLInputElement>(null);
 
+  const dragDisabled =
+    siblings.some((s) => s.emojiPending) ||
+    !!node.emojiPending ||
+    editingTitle ||
+    editingNotes ||
+    addingChild;
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: node._id,
+    data: { node, parentId: listParentId, depth },
+    disabled: dragDisabled,
+  });
+
+  const setRowRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      setNodeRef(el);
+    },
+    [setNodeRef]
+  );
+
   const childCount = node.children.length;
   const collapsed = isCollapsed(node._id);
   const showChildren = childCount > 0 && !collapsed;
-  const canMoveUp = siblingIndex > 0;
-  const canMoveDown = siblingIndex < siblings.length - 1;
   const isPending = !!node.emojiPending;
+  const listHasPending = siblings.some((s) => s.emojiPending);
+  const canMoveUp = siblingIndex > 0 && !isPending && !listHasPending;
+  const canMoveDown = siblingIndex < siblings.length - 1 && !isPending && !listHasPending;
   const childProgress = childProgressMap.get(node._id);
+  const isBeingDragged = isDragging || activeId === node._id;
+  const isNestTarget = dropPreview?.kind === "nest" && dropPreview.targetId === node._id;
+  const parentKey = listParentId ?? "root";
 
   useEffect(() => {
     setTitle(node.title);
@@ -142,31 +167,38 @@ export function TodoItem({
     }
   };
 
-  const handleDragOver = (e: DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    onDragEnter();
-  };
-
-  const handleDrop = (e: DragEvent) => {
-    e.preventDefault();
-    onDrop();
-  };
-
   return (
     <li
       ref={itemRef}
-      className={`list-none ${isDragging ? "opacity-40" : ""} ${isDropTarget ? "rounded-lg ring-1 ring-zinc-600" : ""}`}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
+      className={`todo-dnd-item list-none ${isBeingDragged ? "opacity-40" : ""}`}
     >
       <div
-        className={`todo-item group relative rounded-lg px-1 py-1 ${node.completed ? "opacity-60" : ""} ${addingChild || editingTitle || editingNotes ? "show-controls" : ""}`}
+        className="todo-row-target"
+        data-todo-row={node._id}
+        data-todo-parent={parentKey}
+        data-todo-pending={isPending ? "true" : undefined}
       >
+        <div
+          className={`todo-drag-placeholder-inner${showInsertGhost ? " is-open" : ""}`}
+          style={{
+            height: showInsertGhost ? dragRowHeight : 0,
+            marginBottom: showInsertGhost ? 4 : 0,
+          }}
+          aria-hidden
+        />
+        <div
+          ref={setRowRef}
+          {...listeners}
+          {...attributes}
+          className={`todo-item todo-item-draggable group relative rounded-lg px-1 py-1 ${node.completed ? "opacity-60" : ""} ${addingChild || editingTitle || editingNotes ? "show-controls" : ""} ${dragDisabled ? "" : "cursor-grab active:cursor-grabbing"}`}
+        >
+          {isNestTarget && <div className="todo-nest-overlay" aria-hidden />}
+
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => childCount > 0 && toggleCollapsed(node._id)}
+            onPointerDown={stopDrag}
             disabled={childCount === 0}
             className={`flex h-6 w-5 shrink-0 items-center justify-center rounded text-xs text-zinc-400 ${
               childCount > 0
@@ -184,15 +216,18 @@ export function TodoItem({
             checked={node.completed}
             disabled={isPending}
             onChange={(e) => onUpdate(node._id, { completed: e.target.checked })}
+            onPointerDown={stopDrag}
             className="todo-checkbox"
           />
 
-          <EmojiPickerPopover
-            emoji={node.emoji || "📋"}
-            loading={isPending}
-            scrollContainerRef={scrollContainerRef}
-            onSelect={(emoji) => onUpdate(node._id, { emoji })}
-          />
+          <div onPointerDown={stopDrag}>
+            <EmojiPickerPopover
+              emoji={node.emoji || "📋"}
+              loading={isPending}
+              scrollContainerRef={scrollContainerRef}
+              onSelect={(emoji) => onUpdate(node._id, { emoji })}
+            />
+          </div>
 
           <div
             className={`min-w-0 flex-1 ${
@@ -208,6 +243,7 @@ export function TodoItem({
                 onChange={(e) => setTitle(e.target.value)}
                 onBlur={saveTitle}
                 onKeyDown={handleTitleKey}
+                onPointerDown={stopDrag}
                 className="w-full rounded bg-zinc-800 px-2 py-1 text-base text-zinc-100 outline-none ring-1 ring-zinc-600"
               />
             ) : (
@@ -243,6 +279,7 @@ export function TodoItem({
                 onChange={(e) => setNotes(e.target.value)}
                 onBlur={saveNotes}
                 onKeyDown={handleNotesKey}
+                onPointerDown={stopDrag}
                 rows={2}
                 placeholder="Notes..."
                 className="mt-1 w-full resize-y rounded bg-zinc-800 px-2 py-1 text-base text-zinc-300 outline-none ring-1 ring-zinc-600"
@@ -261,22 +298,8 @@ export function TodoItem({
 
           <div
             className={`todo-item-controls rounded-md bg-zinc-950/95 px-0.5 ${childProgress ? "[@media(hover:none)]:ml-1" : ""} ${isPending ? "pointer-events-none opacity-40" : ""}`}
+            onPointerDown={stopDrag}
           >
-            <button
-              type="button"
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData("text/plain", node._id);
-                e.dataTransfer.effectAllowed = "move";
-                onDragStart();
-              }}
-              onDragEnd={onDragEnd}
-              className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center rounded text-xs text-zinc-500 active:cursor-grabbing hover:bg-zinc-800 hover:text-zinc-300"
-              aria-label="Drag to reorder"
-            >
-              ⠿
-            </button>
-
             <div className="flex flex-col">
               <button
                 type="button"
@@ -318,7 +341,7 @@ export function TodoItem({
         </div>
 
         {addingChild && (
-          <form onSubmit={submitChild} className="ml-10 mt-1.5 flex gap-2">
+          <form onSubmit={submitChild} className="ml-10 mt-1.5 flex gap-2" onPointerDown={stopDrag}>
             <input
               ref={childRef}
               value={childTitle}
@@ -344,22 +367,26 @@ export function TodoItem({
             </button>
           </form>
         )}
+        </div>
       </div>
 
       {showChildren && (
         <TodoSiblingList
           siblings={node.children}
+          listParentId={node._id}
           depth={depth + 1}
           className="ml-4 border-l border-zinc-800 pl-2"
           scrollContainerRef={scrollContainerRef}
           scrollToTodoId={scrollToTodoId}
           onScrolledToTodo={onScrolledToTodo}
           childProgressMap={childProgressMap}
+          activeId={activeId}
+          dropPreview={dropPreview}
+          dragRowHeight={dragRowHeight}
           onUpdate={onUpdate}
           onCreate={onCreate}
           onDelete={onDelete}
           onMoveSibling={onMoveSibling}
-          onReorderByDrag={onReorderByDrag}
           isCollapsed={isCollapsed}
           toggleCollapsed={toggleCollapsed}
         />

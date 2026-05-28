@@ -67,4 +67,37 @@ describe("todo routes", () => {
     expect(patch.status).toBe(404);
     expect(del.status).toBe(404);
   });
+
+  it("persists sibling reorder", async () => {
+    const agent = await registerAgent("reorder@example.com");
+
+    const a = await agent.post("/api/todos").send({ title: "A" });
+    const b = await agent.post("/api/todos").send({ title: "B" });
+    const c = await agent.post("/api/todos").send({ title: "C" });
+
+    const res = await agent.patch("/api/todos/reorder").send({
+      items: [
+        { id: c.body._id, order: 0 },
+        { id: a.body._id, order: 1 },
+        { id: b.body._id, order: 2 },
+      ],
+    });
+    expect(res.status).toBe(200);
+
+    const list = await agent.get("/api/todos");
+    const titles = list.body
+      .sort((x: { order: number }, y: { order: number }) => x.order - y.order)
+      .map((t: { title: string }) => t.title);
+
+    expect(titles).toEqual(["C", "A", "B"]);
+  });
+
+  it("rejects reorder with invalid ids", async () => {
+    const agent = await registerAgent("invalid-reorder@example.com");
+    const res = await agent.patch("/api/todos/reorder").send({
+      items: [{ id: "temp-not-a-real-id", order: 0 }],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Invalid id");
+  });
 });

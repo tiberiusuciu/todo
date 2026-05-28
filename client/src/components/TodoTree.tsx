@@ -1,5 +1,6 @@
 import { type RefObject } from "react";
 import type { DirectChildProgress, TodoNode } from "../lib/treeUtils";
+import type { DropPreview } from "../lib/moveUtils";
 import { TodoSiblingList } from "./TodoSiblingList";
 
 type Props = {
@@ -8,11 +9,13 @@ type Props = {
   scrollToTodoId: string | null;
   onScrolledToTodo: () => void;
   childProgressMap: Map<string, DirectChildProgress>;
+  activeId: string | null;
+  dropPreview: DropPreview | null;
+  dragRowHeight: number;
   onUpdate: (id: string, data: { title?: string; notes?: string; emoji?: string; completed?: boolean }) => Promise<void>;
   onCreate: (parentId: string, title: string) => Promise<boolean>;
   onDelete: (id: string, hasChildren: boolean) => Promise<void>;
   onMoveSibling: (siblings: TodoNode[], id: string, direction: "up" | "down") => Promise<void>;
-  onReorderByDrag: (siblings: TodoNode[], dragId: string, targetId: string) => Promise<void>;
   isCollapsed: (id: string) => boolean;
   toggleCollapsed: (id: string) => void;
 };
@@ -23,11 +26,13 @@ export function TodoTree({
   scrollToTodoId,
   onScrolledToTodo,
   childProgressMap,
+  activeId,
+  dropPreview,
+  dragRowHeight,
   onUpdate,
   onCreate,
   onDelete,
   onMoveSibling,
-  onReorderByDrag,
   isCollapsed,
   toggleCollapsed,
 }: Props) {
@@ -40,17 +45,20 @@ export function TodoTree({
   return (
     <TodoSiblingList
       siblings={nodes}
+      listParentId={null}
       depth={0}
       className="space-y-1"
       scrollContainerRef={scrollContainerRef}
       scrollToTodoId={scrollToTodoId}
       onScrolledToTodo={onScrolledToTodo}
       childProgressMap={childProgressMap}
+      activeId={activeId}
+      dropPreview={dropPreview}
+      dragRowHeight={dragRowHeight}
       onUpdate={onUpdate}
       onCreate={onCreate}
       onDelete={onDelete}
       onMoveSibling={onMoveSibling}
-      onReorderByDrag={onReorderByDrag}
       isCollapsed={isCollapsed}
       toggleCollapsed={toggleCollapsed}
     />

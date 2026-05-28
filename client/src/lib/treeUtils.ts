@@ -28,6 +28,19 @@ export function buildTree(flat: Todo[]): TodoNode[] {
   return roots;
 }
 
+export function flattenTree(nodes: TodoNode[]): Todo[] {
+  const out: Todo[] = [];
+  function walk(list: TodoNode[]) {
+    for (const node of list) {
+      const { children, ...todo } = node;
+      out.push(todo);
+      walk(children);
+    }
+  }
+  walk(nodes);
+  return out;
+}
+
 export function hasChildren(node: TodoNode): boolean {
   return node.children.length > 0;
 }
@@ -54,6 +67,28 @@ export function countCompleted(nodes: TodoNode[]): number {
     count += countCompleted(node.children);
   }
   return count;
+}
+
+export function isDescendant(nodes: TodoNode[], ancestorId: string, nodeId: string): boolean {
+  function containsDescendant(list: TodoNode[]): boolean {
+    for (const n of list) {
+      if (n._id === nodeId) return true;
+      if (containsDescendant(n.children)) return true;
+    }
+    return false;
+  }
+
+  function findAncestor(list: TodoNode[]): TodoNode | null {
+    for (const n of list) {
+      if (n._id === ancestorId) return n;
+      const found = findAncestor(n.children);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const ancestor = findAncestor(nodes);
+  return ancestor ? containsDescendant(ancestor.children) : false;
 }
 
 export type DirectChildProgress = { done: number; total: number };

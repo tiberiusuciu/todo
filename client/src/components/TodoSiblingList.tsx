@@ -1,20 +1,25 @@
-import { useState, type RefObject } from "react";
+import { type RefObject } from "react";
 import type { DirectChildProgress, TodoNode } from "../lib/treeUtils";
+import type { DropPreview } from "../lib/moveUtils";
+import { insertGapIndex } from "../lib/moveUtils";
 import { TodoItem } from "./TodoItem";
 
 type Props = {
   siblings: TodoNode[];
+  listParentId: string | null;
   depth: number;
   className?: string;
   scrollContainerRef: RefObject<HTMLDivElement | null>;
   scrollToTodoId: string | null;
   onScrolledToTodo: () => void;
   childProgressMap: Map<string, DirectChildProgress>;
+  activeId: string | null;
+  dropPreview: DropPreview | null;
+  dragRowHeight: number;
   onUpdate: (id: string, data: { title?: string; notes?: string; emoji?: string; completed?: boolean }) => Promise<void>;
   onCreate: (parentId: string, title: string) => Promise<boolean>;
   onDelete: (id: string, hasChildren: boolean) => Promise<void>;
   onMoveSibling: (siblings: TodoNode[], id: string, direction: "up" | "down") => Promise<void>;
-  onReorderByDrag: (siblings: TodoNode[], dragId: string, targetId: string) => Promise<void>;
   isCollapsed: (id: string) => boolean;
   toggleCollapsed: (id: string) => void;
 };
@@ -27,49 +32,50 @@ function sortSiblings(siblings: TodoNode[]) {
 
 export function TodoSiblingList({
   siblings,
+  listParentId,
   depth,
   className,
+  activeId,
+  dropPreview,
+  dragRowHeight,
   onMoveSibling,
-  onReorderByDrag,
   ...rest
 }: Props) {
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const sorted = sortSiblings(siblings);
+  const insertIndex = insertGapIndex(sorted, dropPreview, listParentId);
 
-  const handleDrop = async (targetId: string) => {
-    if (dragId && dragId !== targetId) {
-      await onReorderByDrag(sorted, dragId, targetId);
-    }
-    setDragId(null);
-    setDropTargetId(null);
-  };
+  const listParentKey = listParentId ?? "root";
 
   return (
-    <ul className={className}>
+    <ul
+      className={`todo-sibling-list ${className ?? ""}`}
+      data-todo-sibling-list
+      data-todo-list-parent={listParentKey}
+    >
       {sorted.map((node, index) => (
         <TodoItem
           key={node._id}
           node={node}
+          listParentId={listParentId}
           depth={depth}
           siblings={sorted}
           siblingIndex={index}
-          isDragging={dragId === node._id}
-          isDropTarget={dropTargetId === node._id && dragId !== node._id}
-          onDragStart={() => setDragId(node._id)}
-          onDragEnd={() => {
-            setDragId(null);
-            setDropTargetId(null);
-          }}
-          onDragEnter={() => dragId && setDropTargetId(node._id)}
-          onDrop={() => handleDrop(node._id)}
+          activeId={activeId}
+          dropPreview={dropPreview}
+          dragRowHeight={dragRowHeight}
+          showInsertGhost={insertIndex === index && node._id !== activeId}
           onMoveUp={() => onMoveSibling(sorted, node._id, "up")}
           onMoveDown={() => onMoveSibling(sorted, node._id, "down")}
           onMoveSibling={onMoveSibling}
-          onReorderByDrag={onReorderByDrag}
           {...rest}
         />
       ))}
+      <li className="todo-dnd-item list-none" aria-hidden>
+        <div
+          className={`todo-drag-placeholder-inner${insertIndex === sorted.length ? " is-open" : ""}`}
+          style={{ height: insertIndex === sorted.length ? dragRowHeight : 0 }}
+        />
+      </li>
     </ul>
   );
 }

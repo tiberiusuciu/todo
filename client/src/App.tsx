@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type FormEvent } from "react";
 import { AuthPage } from "./components/AuthPage";
 import { Toast } from "./components/Toast";
 import { TodoTree } from "./components/TodoTree";
@@ -7,7 +7,9 @@ import { useCollapsedState } from "./hooks/useCollapsed";
 import { useShowCompleted } from "./hooks/useShowCompleted";
 import { useToast } from "./hooks/useToast";
 import { useTodos } from "./hooks/useTodos";
-import { countCompleted, filterCompleted, buildDirectChildProgressMap } from "./lib/treeUtils";
+import { TodoDragProvider, useTreeDragDrop } from "./hooks/useTreeDragDrop";
+import type { DropPreview } from "./lib/moveUtils";
+import { countCompleted, filterCompleted, buildDirectChildProgressMap, type TodoNode } from "./lib/treeUtils";
 
 export default function App() {
   const { user, loading: authLoading, logout } = useAuth();
@@ -15,10 +17,39 @@ export default function App() {
   const { message, showToast, dismissToast } = useToast();
   const [newTitle, setNewTitle] = useState("");
   const [scrollToTodoId, setScrollToTodoId] = useState<string | null>(null);
-  const { tree, loading, error, create, update, remove, moveSibling, reorderByDrag } =
+  const { tree, loading, error, create, update, remove, moveSibling, moveTodo } =
     useTodos(showToast, user?.id, setScrollToTodoId);
   const { isCollapsed, toggle } = useCollapsedState();
   const { showCompleted, toggle: toggleShowCompleted } = useShowCompleted();
+
+  const findNode = useCallback((nodes: TodoNode[], id: string): TodoNode | undefined => {
+    for (const n of nodes) {
+      if (n._id === id) return n;
+      const found = findNode(n.children, id);
+      if (found) return found;
+    }
+    return undefined;
+  }, []);
+
+  const handleExpandParent = useCallback(
+    (parentId: string) => {
+      if (isCollapsed(parentId)) toggle(parentId);
+    },
+    [isCollapsed, toggle]
+  );
+
+  const handleMove = useCallback(
+    (dragId: string, preview: DropPreview) => moveTodo(dragId, preview),
+    [moveTodo]
+  );
+
+  const drag = useTreeDragDrop({
+    tree,
+    scrollContainerRef: listRef,
+    onMove: handleMove,
+    onExpandParent: handleExpandParent,
+    findNode: (id) => findNode(tree, id),
+  });
 
   const visibleTree = useMemo(
     () => (showCompleted ? tree : filterCompleted(tree)),
@@ -114,20 +145,24 @@ export default function App() {
         {error && <p className="text-red-400">{error}</p>}
 
         {!loading && !error && (
-          <TodoTree
-            nodes={visibleTree}
-            scrollContainerRef={listRef}
-            scrollToTodoId={scrollToTodoId}
-            onScrolledToTodo={() => setScrollToTodoId(null)}
-            childProgressMap={childProgressMap}
-            onUpdate={handleUpdate}
-            onCreate={handleCreateChild}
-            onDelete={handleDelete}
-            onMoveSibling={moveSibling}
-            onReorderByDrag={reorderByDrag}
-            isCollapsed={isCollapsed}
-            toggleCollapsed={toggle}
-          />
+          <TodoDragProvider drag={drag}>
+            <TodoTree
+              nodes={visibleTree}
+              scrollContainerRef={listRef}
+              scrollToTodoId={scrollToTodoId}
+              onScrolledToTodo={() => setScrollToTodoId(null)}
+              childProgressMap={childProgressMap}
+              activeId={drag.activeId}
+              dropPreview={drag.dropPreview}
+              dragRowHeight={drag.dragRowHeight}
+              onUpdate={handleUpdate}
+              onCreate={handleCreateChild}
+              onDelete={handleDelete}
+              onMoveSibling={moveSibling}
+              isCollapsed={isCollapsed}
+              toggleCollapsed={toggle}
+            />
+          </TodoDragProvider>
         )}
       </div>
 

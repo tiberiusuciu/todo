@@ -75,4 +75,36 @@ body {
       @apply pointer-events-auto opacity-100;
     }
   }
+
+  .todo-drag-placeholder-inner {
+    @apply overflow-hidden rounded-lg bg-zinc-800/30 opacity-0 ring-1 ring-zinc-700/40;
+    height: 0;
+    margin-bottom: 0;
+    box-shadow: none;
+    transition:
+      height 200ms ease,
+      margin-bottom 200ms ease,
+      opacity 150ms ease,
+      box-shadow 200ms ease;
+  }
+
+  .todo-drag-placeholder-inner.is-open {
+    @apply opacity-100 shadow-md;
+  }
+
+  .todo-sibling-list {
+    @apply relative;
+  }
+
+  .todo-nest-overlay {
+    @apply pointer-events-none absolute inset-0 rounded-lg bg-zinc-800/35 shadow-lg transition-opacity duration-150 ease-out;
+  }
+
+  .todo-drag-overlay {
+    @apply pointer-events-none opacity-90;
+  }
+
+  .todo-item-draggable[aria-grabbed="true"] {
+    @apply cursor-grabbing;
+  }
 }

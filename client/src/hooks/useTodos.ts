@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type CreateTodoInput, type ReorderItem, type Todo, type UpdateTodoInput } from "../lib/api";
 import { getReorderUpdates, getReorderUpdatesFromDrag } from "../lib/reorderUtils";
+import { applyMoveToFlat, computeMove, type DropPreview, type MoveResult } from "../lib/moveUtils";
 import { buildTree, type TodoNode } from "../lib/treeUtils";
 
 const CREATE_ERROR = "Couldn't create task. Try again.";
+const MOVE_ERROR = "Couldn't move task. Try again.";
 
 function buildOptimisticTodo(prev: Todo[], input: CreateTodoInput, tempId: string): Todo {
   const parentId = input.parentId ?? null;
@@ -25,20 +27,41 @@ function buildOptimisticTodo(prev: Todo[], input: CreateTodoInput, tempId: strin
   };
 }
 
+function mergeReorderItems(move: MoveResult): ReorderItem[] {
+  const seen = new Set<string>();
+  const items: ReorderItem[] = [];
+  for (const item of [...move.targetReorder, ...move.sourceReorder]) {
+    if (!seen.has(item.id)) {
+      seen.add(item.id);
+      items.push(item);
+    }
+  }
+  return items;
+}
+
 export function useTodos(
   onCreateError?: (message: string) => void,
   userId?: string,
   onOptimisticCreate?: (tempId: string) => void
 ) {
+  const todosRef = useRef<Todo[]>([]);
   const [, setTodos] = useState<Todo[]>([]);
   const [tree, setTree] = useState<TodoNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const applyTodos = useCallback((data: Todo[]) => {
-    setTodos(data);
-    setTree(buildTree(data));
+  const commitTodos = useCallback((next: Todo[]) => {
+    todosRef.current = next;
+    setTodos(next);
+    setTree(buildTree(next));
   }, []);
+
+  const applyTodos = useCallback(
+    (data: Todo[]) => {
+      commitTodos(data);
+    },
+    [commitTodos]
+  );
 
   const refresh = useCallback(async () => {
     const data = await api.list();
@@ -47,6 +70,7 @@ export function useTodos(
 
   useEffect(() => {
     if (!userId) {
+      todosRef.current = [];
       setTodos([]);
       setTree([]);
       setLoading(false);
@@ -62,29 +86,17 @@ export function useTodos(
 
   const create = async (input: CreateTodoInput): Promise<Todo | null> => {
     const tempId = `temp-${crypto.randomUUID()}`;
-
-    setTodos((prev) => {
-      const optimistic = buildOptimisticTodo(prev, input, tempId);
-      const next = [...prev, optimistic];
-      setTree(buildTree(next));
-      return next;
-    });
+    const snapshot = todosRef.current;
+    const optimistic = buildOptimisticTodo(snapshot, input, tempId);
+    commitTodos([...snapshot, optimistic]);
     onOptimisticCreate?.(tempId);
 
     try {
       const saved = await api.create(input);
-      setTodos((prev) => {
-        const next = prev.map((t) => (t._id === tempId ? saved : t));
-        setTree(buildTree(next));
-        return next;
-      });
+      commitTodos(todosRef.current.map((t) => (t._id === tempId ? saved : t)));
       return saved;
     } catch {
-      setTodos((prev) => {
-        const next = prev.filter((t) => t._id !== tempId);
-        setTree(buildTree(next));
-        return next;
-      });
+      commitTodos(snapshot);
       onCreateError?.(CREATE_ERROR);
       return null;
     }
@@ -92,11 +104,17 @@ export function useTodos(
 
   const update = async (id: string, input: UpdateTodoInput) => {
     const todo = await api.update(id, input);
-    setTodos((prev) => {
-      const next = prev.map((t) => (t._id === id ? todo : t));
-      setTree(buildTree(next));
-      return next;
-    });
+    commitTodos(
+      todosRef.current.map((t) => {
+        if (t._id !== id) return t;
+        return {
+          ...t,
+          ...todo,
+          order: input.order !== undefined ? todo.order : t.order,
+          parentId: input.parentId !== undefined ? todo.parentId : t.parentId,
+        };
+      })
+    );
     return todo;
   };
 
@@ -108,15 +126,13 @@ export function useTodos(
   const applyReorder = useCallback(
     (items: ReorderItem[]) => {
       const orderMap = new Map(items.map((i) => [i.id, i.order]));
-      setTodos((prev) => {
-        const next = prev.map((t) =>
+      commitTodos(
+        todosRef.current.map((t) =>
           orderMap.has(t._id) ? { ...t, order: orderMap.get(t._id)! } : t
-        );
-        setTree(buildTree(next));
-        return next;
-      });
+        )
+      );
     },
-    []
+    [commitTodos]
   );
 
   const reorder = async (items: ReorderItem[]) => {
@@ -136,5 +152,30 @@ export function useTodos(
     await reorder(items);
   };
 
-  return { tree, loading, error, create, update, remove, moveSibling, reorderByDrag, refresh };
+  const moveTodo = async (dragId: string, preview: DropPreview) => {
+    const snapshot = todosRef.current;
+    const move = computeMove(snapshot, dragId, preview);
+    if (!move) return;
+
+    const optimistic = applyMoveToFlat(snapshot, dragId, move);
+    commitTodos(optimistic);
+
+    const items = mergeReorderItems(move);
+    const draggedBefore = snapshot.find((t) => t._id === dragId);
+    const parentChanged = draggedBefore?.parentId !== move.parentId;
+
+    try {
+      if (parentChanged) {
+        await api.update(dragId, { parentId: move.parentId, order: move.order });
+      }
+      if (items.length > 0) {
+        await api.reorder(items);
+      }
+    } catch {
+      commitTodos(snapshot);
+      onCreateError?.(MOVE_ERROR);
+    }
+  };
+
+  return { tree, loading, error, create, update, remove, moveSibling, reorderByDrag, moveTodo, refresh };
 }
