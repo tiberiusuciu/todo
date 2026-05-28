@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/tiberiusuciu/todos/compare/v1.0.0...v1.1.0) (2026-05-28)
+
+
+### Features
+
+* **tasks:** Add scroll animation to task in view when created ([6c50e1f](https://github.com/tiberiusuciu/todos/commit/6c50e1f3efd59cd83ced2ae2eb353f2dc584a687))
+
 # 1.0.0 (2026-05-28)
 
 
