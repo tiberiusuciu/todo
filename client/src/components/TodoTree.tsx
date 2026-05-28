@@ -5,6 +5,8 @@ import { TodoSiblingList } from "./TodoSiblingList";
 type Props = {
   nodes: TodoNode[];
   scrollContainerRef: RefObject<HTMLDivElement | null>;
+  scrollToTodoId: string | null;
+  onScrolledToTodo: () => void;
   onUpdate: (id: string, data: { title?: string; notes?: string; emoji?: string; completed?: boolean }) => Promise<void>;
   onCreate: (parentId: string, title: string) => Promise<boolean>;
   onDelete: (id: string, hasChildren: boolean) => Promise<void>;
@@ -17,6 +19,8 @@ type Props = {
 export function TodoTree({
   nodes,
   scrollContainerRef,
+  scrollToTodoId,
+  onScrolledToTodo,
   onUpdate,
   onCreate,
   onDelete,
@@ -37,6 +41,8 @@ export function TodoTree({
       depth={0}
       className="space-y-1"
       scrollContainerRef={scrollContainerRef}
+      scrollToTodoId={scrollToTodoId}
+      onScrolledToTodo={onScrolledToTodo}
       onUpdate={onUpdate}
       onCreate={onCreate}
       onDelete={onDelete}

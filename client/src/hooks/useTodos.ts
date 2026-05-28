@@ -25,7 +25,11 @@ function buildOptimisticTodo(prev: Todo[], input: CreateTodoInput, tempId: strin
   };
 }
 
-export function useTodos(onCreateError?: (message: string) => void, userId?: string) {
+export function useTodos(
+  onCreateError?: (message: string) => void,
+  userId?: string,
+  onOptimisticCreate?: (tempId: string) => void
+) {
   const [, setTodos] = useState<Todo[]>([]);
   const [tree, setTree] = useState<TodoNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,6 +69,7 @@ export function useTodos(onCreateError?: (message: string) => void, userId?: str
       setTree(buildTree(next));
       return next;
     });
+    onOptimisticCreate?.(tempId);
 
     try {
       const saved = await api.create(input);
