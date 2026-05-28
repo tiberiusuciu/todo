@@ -2,13 +2,42 @@
 
 Minimal nested todo app — dark theme, multi-user with email/password auth.
 
-## Run
+## Run (prod-like preview)
 
 ```bash
 docker compose up --build
 ```
 
-Open [http://localhost:5173](http://localhost:5173)
+Open [http://localhost:5173](http://localhost:5173). Serves a **production build** (nginx + compiled API) — no hot reload.
+
+## Dev (daily work — hot reload)
+
+Everything in Docker with Vite HMR and API auto-restart:
+
+```bash
+npm run dev
+```
+
+Same URL: [http://localhost:5173](http://localhost:5173). Edit client or server code; the browser updates without restarting containers. Rebuild only when `package.json` changes:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml build api client
+```
+
+| Command | Use case |
+|---------|----------|
+| `docker compose up --build` | Prod-like preview (no HMR) |
+| `npm run dev` | Daily development (HMR + API watch) |
+
+### WSL / file watching
+
+Dev compose enables polling for reliable reloads through Docker bind mounts on WSL2. Slightly higher CPU use; usually fine for this app. If it feels slow, use the hybrid workflow instead (fastest HMR):
+
+```bash
+npm run dev:hybrid
+```
+
+Starts Mongo + Ollama in Docker; runs Vite and `tsx watch` on the host. Requires `npm install` in `server/` and `client/` once.
 
 On first run, the `ollama-init` service pulls the `llama3.2:1b` model (~1.3 GB). This may take a few minutes.
 
@@ -42,27 +71,21 @@ Each new todo gets an emoji suggested by **Ollama** running locally in Docker �
 
 Optional: copy `.env.example` to `.env` to change `OLLAMA_MODEL`.
 
-## Dev (without Docker)
-
-Terminal 1 — MongoDB (or use Docker for mongo only):
+## Dev (hybrid — host Node, Docker infra)
 
 ```bash
-docker compose up mongo
+npm run dev:hybrid
 ```
 
-Terminal 2 — API:
+Or manually in three terminals — MongoDB + Ollama in Docker, then API and client on the host:
 
 ```bash
+docker compose up -d mongo ollama
 cd server && npm install && npm run dev
-```
-
-Terminal 3 — Client:
-
-```bash
 cd client && npm install && npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) (Vite dev server proxies `/api` to port 3001).
+Open [http://localhost:5173](http://localhost:5173) (Vite proxies `/api` to port 3001).
 
 Local dev does not require an invite code unless you set `REGISTRATION_CODE` in your environment.
 
