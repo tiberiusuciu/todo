@@ -73,6 +73,53 @@ cd server && npm test
 cd client && npm run build
 ```
 
+## Migrate local todos to production
+
+Merge-import tasks from local Mongo into your prod account (keeps existing prod todos).
+
+**1. Local user ID**
+
+```bash
+docker exec todo-app-mongo-1 mongosh todos --quiet --eval '
+db.users.findOne({ email: "you@example.com" }, { _id: 1 })
+'
+```
+
+**2. Export local todos**
+
+```bash
+docker exec todo-app-mongo-1 mongosh todos --quiet --eval "
+EJSON.stringify(
+  db.todos.find({ userId: ObjectId('LOCAL_USER_ID') }).toArray()
+)
+" > todos-export.json
+```
+
+**3. Prod user ID** (on VPS)
+
+```bash
+docker exec todo-app-mongo-1 mongosh todos --quiet --eval '
+db.users.findOne({ email: "you@example.com" }, { _id: 1 })
+'
+```
+
+**4. Copy export to VPS**
+
+```bash
+scp todos-export.json root@YOUR_VPS:~/todo-app/
+```
+
+**5. Import on VPS** (from `~/todo-app`, replaces `PROD_USER_ID`)
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm --no-deps \
+  -v "$(pwd)/todos-export.json:/data/todos-export.json:ro" \
+  -v "$(pwd)/server:/app" -w /app \
+  node:22-alpine sh -c "npm ci && MONGODB_URI=mongodb://mongo:27017/todos npx tsx scripts/migrate-todos.ts --file /data/todos-export.json --user-id PROD_USER_ID"
+```
+
+Add `--dry-run` before the closing quote to preview without writing. New `_id`s and `parentId` links are remapped; prod todos are not deleted.
+
 ## Versioning
 
 The app version is shown vertically on the right edge of the UI (e.g. `v1.1.0`). It comes from the root [`package.json`](package.json).
