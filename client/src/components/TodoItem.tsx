@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type DragEvent, type FormEvent, type KeyboardEvent, type RefObject } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, type DragEvent, type FormEvent, type KeyboardEvent, type RefObject } from "react";
 import type { TodoNode } from "../lib/treeUtils";
 import { hasChildren } from "../lib/treeUtils";
 import { TodoSiblingList } from "./TodoSiblingList";
@@ -10,6 +10,8 @@ type Props = {
   siblings: TodoNode[];
   siblingIndex: number;
   scrollContainerRef: RefObject<HTMLDivElement | null>;
+  scrollToTodoId: string | null;
+  onScrolledToTodo: () => void;
   isDragging: boolean;
   isDropTarget: boolean;
   onDragStart: () => void;
@@ -33,6 +35,8 @@ export function TodoItem({
   siblings,
   siblingIndex,
   scrollContainerRef,
+  scrollToTodoId,
+  onScrolledToTodo,
   isDragging,
   isDropTarget,
   onDragStart,
@@ -55,6 +59,7 @@ export function TodoItem({
   const [notes, setNotes] = useState(node.notes);
   const [addingChild, setAddingChild] = useState(false);
   const [childTitle, setChildTitle] = useState("");
+  const itemRef = useRef<HTMLLIElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
   const childRef = useRef<HTMLInputElement>(null);
@@ -82,6 +87,12 @@ export function TodoItem({
   useEffect(() => {
     if (addingChild) childRef.current?.focus();
   }, [addingChild]);
+
+  useLayoutEffect(() => {
+    if (scrollToTodoId !== node._id || !itemRef.current) return;
+    itemRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+    onScrolledToTodo();
+  }, [scrollToTodoId, node._id, onScrolledToTodo]);
 
   const saveTitle = async () => {
     setEditingTitle(false);
@@ -141,6 +152,7 @@ export function TodoItem({
 
   return (
     <li
+      ref={itemRef}
       className={`list-none ${isDragging ? "opacity-40" : ""} ${isDropTarget ? "rounded-lg ring-1 ring-zinc-600" : ""}`}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
@@ -318,6 +330,8 @@ export function TodoItem({
           depth={depth + 1}
           className="ml-4 border-l border-zinc-800 pl-2"
           scrollContainerRef={scrollContainerRef}
+          scrollToTodoId={scrollToTodoId}
+          onScrolledToTodo={onScrolledToTodo}
           onUpdate={onUpdate}
           onCreate={onCreate}
           onDelete={onDelete}

@@ -7,6 +7,8 @@ type Props = {
   depth: number;
   className?: string;
   scrollContainerRef: RefObject<HTMLDivElement | null>;
+  scrollToTodoId: string | null;
+  onScrolledToTodo: () => void;
   onUpdate: (id: string, data: { title?: string; notes?: string; emoji?: string; completed?: boolean }) => Promise<void>;
   onCreate: (parentId: string, title: string) => Promise<boolean>;
   onDelete: (id: string, hasChildren: boolean) => Promise<void>;

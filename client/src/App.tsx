@@ -13,11 +13,12 @@ export default function App() {
   const { user, loading: authLoading, logout } = useAuth();
   const listRef = useRef<HTMLDivElement>(null);
   const { message, showToast, dismissToast } = useToast();
+  const [newTitle, setNewTitle] = useState("");
+  const [scrollToTodoId, setScrollToTodoId] = useState<string | null>(null);
   const { tree, loading, error, create, update, remove, moveSibling, reorderByDrag } =
-    useTodos(showToast, user?.id);
+    useTodos(showToast, user?.id, setScrollToTodoId);
   const { isCollapsed, toggle } = useCollapsedState();
   const { showCompleted, toggle: toggleShowCompleted } = useShowCompleted();
-  const [newTitle, setNewTitle] = useState("");
 
   const visibleTree = useMemo(
     () => (showCompleted ? tree : filterCompleted(tree)),
@@ -42,6 +43,7 @@ export default function App() {
   };
 
   const handleCreateChild = async (parentId: string, title: string) => {
+    if (isCollapsed(parentId)) toggle(parentId);
     const saved = await create({ title, parentId });
     return saved !== null;
   };
@@ -111,6 +113,8 @@ export default function App() {
           <TodoTree
             nodes={visibleTree}
             scrollContainerRef={listRef}
+            scrollToTodoId={scrollToTodoId}
+            onScrolledToTodo={() => setScrollToTodoId(null)}
             onUpdate={handleUpdate}
             onCreate={handleCreateChild}
             onDelete={handleDelete}
