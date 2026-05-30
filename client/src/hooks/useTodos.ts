@@ -23,6 +23,7 @@ function buildOptimisticTodo(prev: Todo[], input: CreateTodoInput, tempId: strin
     completed: false,
     parentId,
     order: maxOrder + 1,
+    dueAt: null,
     createdAt: now,
     updatedAt: now,
   };

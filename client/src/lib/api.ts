@@ -8,6 +8,7 @@ export interface Todo {
   order: number;
   createdAt: string;
   updatedAt: string;
+  dueAt: string | null;
   emojiPending?: boolean;
 }
 
@@ -19,6 +20,7 @@ export type CreateTodoInput = {
   title: string;
   notes?: string;
   parentId?: string | null;
+  timezone?: string;
 };
 
 export type ReorderItem = { id: string; order: number };
@@ -30,6 +32,7 @@ export type UpdateTodoInput = {
   completed?: boolean;
   parentId?: string | null;
   order?: number;
+  dueAt?: string | null;
 };
 
 const BASE = "/api/todos";
@@ -59,7 +62,13 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 export const api = {
   list: () => request<Todo[]>(BASE),
   create: (data: CreateTodoInput) =>
-    request<Todo>(BASE, { method: "POST", body: JSON.stringify(data) }),
+    request<Todo>(BASE, {
+      method: "POST",
+      body: JSON.stringify({
+        ...data,
+        timezone: data.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
+    }),
   update: (id: string, data: UpdateTodoInput) =>
     request<Todo>(`${BASE}/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   delete: (id: string) =>

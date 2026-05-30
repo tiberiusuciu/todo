@@ -17,6 +17,16 @@ import { useExpandHeight } from "../hooks/useExpandHeight";
 import { TodoSiblingList } from "./TodoSiblingList";
 import { EmojiPickerPopover } from "./EmojiPickerPopover";
 import { TodoActionsMenu } from "./TodoActionsMenu";
+import { TodoDueDatePicker } from "./TodoDueDatePicker";
+import { formatDueDate } from "../lib/formatDueDate";
+
+type UpdateData = {
+  title?: string;
+  notes?: string;
+  emoji?: string;
+  completed?: boolean;
+  dueAt?: string | null;
+};
 
 type Props = {
   node: TodoNode;
@@ -31,7 +41,7 @@ type Props = {
   dropPreview: DropPreview | null;
   dragRowHeight: number;
   showInsertGhost: boolean;
-  onUpdate: (id: string, data: { title?: string; notes?: string; emoji?: string; completed?: boolean }) => Promise<void>;
+  onUpdate: (id: string, data: UpdateData) => Promise<void>;
   onCreate: (parentId: string, title: string) => Promise<boolean>;
   onDelete: (id: string, hasChildren: boolean) => Promise<void>;
   isCollapsed: (id: string) => boolean;
@@ -47,6 +57,15 @@ function DragHandleIcon() {
       <circle cx="7.5" cy="5" r="0.85" />
       <circle cx="2.5" cy="8" r="0.85" />
       <circle cx="7.5" cy="8" r="0.85" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden>
+      <circle cx="5" cy="5" r="4" stroke="currentColor" strokeWidth="1" />
+      <path d="M5 2.5V5l1.75 1.75" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
     </svg>
   );
 }
@@ -77,7 +96,11 @@ export function TodoItem({
   const [notes, setNotes] = useState(node.notes);
   const [addingChild, setAddingChild] = useState(false);
   const [childTitle, setChildTitle] = useState("");
+  const [duePickerOpen, setDuePickerOpen] = useState(false);
   const itemRef = useRef<HTMLLIElement>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const dueMetadataRef = useRef<HTMLButtonElement>(null);
+  const pickerAnchorRef = useRef<HTMLElement | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
   const childRef = useRef<HTMLInputElement>(null);
@@ -102,6 +125,17 @@ export function TodoItem({
   const isBeingDragged = isDragging || activeId === node._id;
   const isNestTarget = dropPreview?.kind === "nest" && dropPreview.targetId === node._id;
   const parentKey = listParentId ?? "root";
+  const showDueMetadata = !!node.dueAt && !isPending && !editingTitle && !editingNotes;
+
+  const openDuePickerFromMenu = () => {
+    pickerAnchorRef.current = menuTriggerRef.current;
+    setDuePickerOpen(true);
+  };
+
+  const openDuePickerFromMetadata = (anchor: HTMLElement) => {
+    pickerAnchorRef.current = anchor;
+    setDuePickerOpen(true);
+  };
 
   const togglePreview = useCallback(() => {
     setPreviewExpanded((prev) => !prev);
@@ -371,15 +405,44 @@ export function TodoItem({
                   </div>
                 </div>
               )}
+
+              {showDueMetadata && node.dueAt && (
+                <button
+                  ref={dueMetadataRef}
+                  type="button"
+                  disabled={isPending}
+                  onClick={(e) => openDuePickerFromMetadata(e.currentTarget)}
+                  className="todo-metadata-due-date"
+                  aria-label={`Due ${formatDueDate(node.dueAt)}`}
+                  aria-expanded={duePickerOpen}
+                >
+                  <ClockIcon />
+                  <span>{formatDueDate(node.dueAt)}</span>
+                </button>
+              )}
             </div>
+
+            <TodoDueDatePicker
+              dueAt={node.dueAt}
+              open={duePickerOpen}
+              onOpenChange={setDuePickerOpen}
+              anchorRef={pickerAnchorRef}
+              disabled={isPending}
+              scrollContainerRef={scrollContainerRef}
+              onSave={(dueAt) => onUpdate(node._id, { dueAt })}
+            />
 
             <div className={`todo-item-actions self-start pt-1 ${isPending ? "opacity-40" : ""}`}>
               {progressBadge}
               <TodoActionsMenu
+                ref={menuTriggerRef}
                 disabled={isPending}
+                hasDueDate={!!node.dueAt}
                 scrollContainerRef={scrollContainerRef}
                 onAddSubtask={() => setAddingChild(true)}
                 onDelete={() => onDelete(node._id, hasChildren(node))}
+                onAddDueDate={openDuePickerFromMenu}
+                onEditDueDate={openDuePickerFromMenu}
               />
               <button
                 type="button"

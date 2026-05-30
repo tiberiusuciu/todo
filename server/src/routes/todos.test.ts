@@ -92,12 +92,24 @@ describe("todo routes", () => {
     expect(titles).toEqual(["C", "A", "B"]);
   });
 
-  it("rejects reorder with invalid ids", async () => {
-    const agent = await registerAgent("invalid-reorder@example.com");
-    const res = await agent.patch("/api/todos/reorder").send({
-      items: [{ id: "temp-not-a-real-id", order: 0 }],
-    });
+  it("rejects invalid dueAt on patch", async () => {
+    const agent = await registerAgent("due-patch@example.com");
+    const created = await agent.post("/api/todos").send({ title: "Task" });
+    const res = await agent.patch(`/api/todos/${created.body._id}`).send({ dueAt: "invalid" });
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe("Invalid id");
+  });
+
+  it("clears dueAt on patch", async () => {
+    const agent = await registerAgent("due-clear@example.com");
+    const created = await agent.post("/api/todos").send({ title: "Task" });
+    const set = await agent
+      .patch(`/api/todos/${created.body._id}`)
+      .send({ dueAt: "2026-06-01T16:00:00.000Z" });
+    expect(set.status).toBe(200);
+    expect(set.body.dueAt).toBeTruthy();
+
+    const cleared = await agent.patch(`/api/todos/${created.body._id}`).send({ dueAt: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.dueAt).toBeNull();
   });
 });

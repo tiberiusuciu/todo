@@ -16,7 +16,7 @@ type Props = {
   activeId: string | null;
   dropPreview: DropPreview | null;
   dragRowHeight: number;
-  onUpdate: (id: string, data: { title?: string; notes?: string; emoji?: string; completed?: boolean }) => Promise<void>;
+  onUpdate: (id: string, data: { title?: string; notes?: string; emoji?: string; completed?: boolean; dueAt?: string | null }) => Promise<void>;
   onCreate: (parentId: string, title: string) => Promise<boolean>;
   onDelete: (id: string, hasChildren: boolean) => Promise<void>;
   isCollapsed: (id: string) => boolean;

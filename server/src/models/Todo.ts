@@ -8,6 +8,7 @@ export interface ITodo extends Document {
   parentId: Types.ObjectId | null;
   userId: Types.ObjectId | null;
   order: number;
+  dueAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,6 +22,7 @@ const todoSchema = new Schema<ITodo>(
     parentId: { type: Schema.Types.ObjectId, ref: "Todo", default: null },
     userId: { type: Schema.Types.ObjectId, ref: "User", default: null },
     order: { type: Number, default: 0 },
+    dueAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

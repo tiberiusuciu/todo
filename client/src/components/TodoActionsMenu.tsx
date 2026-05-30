@@ -1,26 +1,21 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { forwardRef, useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import { computePopoverPosition } from "../lib/popoverPosition";
 
 const MENU_W = 160;
+const MENU_EST_H = 168;
 const GAP = 4;
 
 type Position = { top: number; left: number };
 
-function computePosition(trigger: HTMLElement): Position {
-  const rect = trigger.getBoundingClientRect();
-  const left = Math.min(
-    Math.max(rect.right - MENU_W, GAP),
-    window.innerWidth - MENU_W - GAP
-  );
-  const top = rect.bottom + GAP;
-  return { top, left };
-}
-
 type Props = {
   disabled?: boolean;
+  hasDueDate?: boolean;
   scrollContainerRef?: RefObject<HTMLElement | null>;
   onAddSubtask: () => void;
   onDelete: () => void;
+  onAddDueDate?: () => void;
+  onEditDueDate?: () => void;
 };
 
 function MenuDotsIcon() {
@@ -33,25 +28,39 @@ function MenuDotsIcon() {
   );
 }
 
-export function TodoActionsMenu({
-  disabled,
-  scrollContainerRef,
-  onAddSubtask,
-  onDelete,
-}: Props) {
+export const TodoActionsMenu = forwardRef<HTMLButtonElement, Props>(function TodoActionsMenu(
+  {
+    disabled,
+    hasDueDate,
+    scrollContainerRef,
+    onAddSubtask,
+    onDelete,
+    onAddDueDate,
+    onEditDueDate,
+  },
+  ref
+) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<Position>({ top: 0, left: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+
+  const setRefs = (node: HTMLButtonElement | null) => {
+    triggerRef.current = node;
+    if (typeof ref === "function") ref(node);
+    else if (ref) (ref as MutableRefObject<HTMLButtonElement | null>).current = node;
+  };
 
   const updatePosition = () => {
-    if (triggerRef.current) {
-      setPosition(computePosition(triggerRef.current));
-    }
+    if (!triggerRef.current) return;
+    const height = containerRef.current?.offsetHeight ?? MENU_EST_H;
+    setPosition(computePopoverPosition(triggerRef.current, MENU_W, height, GAP));
   };
 
   useLayoutEffect(() => {
-    if (open) updatePosition();
+    if (!open) return;
+    updatePosition();
+    requestAnimationFrame(updatePosition);
   }, [open]);
 
   useEffect(() => {
@@ -112,6 +121,31 @@ export function TodoActionsMenu({
         >
           Add sub-task
         </button>
+        {hasDueDate ? (
+          <button
+            type="button"
+            role="menuitem"
+            className="block w-full px-3 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-800"
+            onClick={() => {
+              onEditDueDate?.();
+              setOpen(false);
+            }}
+          >
+            Edit due date
+          </button>
+        ) : (
+          <button
+            type="button"
+            role="menuitem"
+            className="block w-full px-3 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-800"
+            onClick={() => {
+              onAddDueDate?.();
+              setOpen(false);
+            }}
+          >
+            Add due date
+          </button>
+        )}
         <button
           type="button"
           role="menuitem"
@@ -130,7 +164,7 @@ export function TodoActionsMenu({
   return (
     <>
       <button
-        ref={triggerRef}
+        ref={setRefs}
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
@@ -144,4 +178,4 @@ export function TodoActionsMenu({
       {menuPortal}
     </>
   );
-}
+});

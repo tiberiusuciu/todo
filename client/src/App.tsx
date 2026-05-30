@@ -76,7 +76,7 @@ export default function App() {
 
   const handleUpdate = async (
     id: string,
-    data: { title?: string; notes?: string; emoji?: string; completed?: boolean }
+    data: { title?: string; notes?: string; emoji?: string; completed?: boolean; dueAt?: string | null }
   ) => {
     await update(id, data);
   };

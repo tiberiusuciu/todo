@@ -45,6 +45,7 @@ export function todosChanged(a: Todo[], b: Todo[]): boolean {
     if (todo.parentId !== other.parentId) return true;
     if (todo.order !== other.order) return true;
     if (todo.emoji !== other.emoji) return true;
+    if (todo.dueAt !== other.dueAt) return true;
   }
   return false;
 }

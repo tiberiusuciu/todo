@@ -2,6 +2,8 @@ import { Router, Request, Response } from "express";
 import mongoose from "mongoose";
 import { Todo } from "../models/Todo.js";
 import { suggestEmoji } from "../services/suggestEmoji.js";
+import { parseDueDate } from "../services/parseDueDate.js";
+import { parseIsoDueDate } from "../utils/dueDate.js";
 import { isValidEmoji } from "../utils/emoji.js";
 import { broadcastTodosChanged } from "../sync/broadcast.js";
 
@@ -47,7 +49,7 @@ router.get("/", async (req: Request, res: Response) => {
 });
 
 router.post("/", async (req: Request, res: Response) => {
-  const { title, notes, parentId, order } = req.body;
+  const { title, notes, parentId, order, timezone } = req.body;
   const userId = req.user!.id;
 
   if (!title?.trim()) {
@@ -76,12 +78,20 @@ router.post("/", async (req: Request, res: Response) => {
     resolvedOrder = siblings.length > 0 ? siblings[0].order + 1 : 0;
   }
 
-  const emoji = await suggestEmoji(title.trim());
+  const rawTitle = title.trim();
+  const tz = typeof timezone === "string" && timezone.trim() ? timezone.trim() : "UTC";
+  const referenceDate = new Date();
+
+  const [emoji, parsed] = await Promise.all([
+    suggestEmoji(rawTitle),
+    parseDueDate(rawTitle, referenceDate, tz),
+  ]);
 
   const todo = await Todo.create({
-    title: title.trim(),
+    title: parsed.title,
     notes: notes ?? "",
     emoji,
+    dueAt: parsed.dueAt,
     parentId: parentId ?? null,
     userId,
     order: resolvedOrder,
@@ -126,7 +136,7 @@ router.patch("/reorder", async (req: Request, res: Response) => {
 router.patch("/:id", async (req: Request, res: Response) => {
   const id = req.params.id as string;
   const userId = req.user!.id;
-  const { title, notes, emoji, completed, parentId, order } = req.body;
+  const { title, notes, emoji, completed, parentId, order, dueAt } = req.body;
 
   if (!mongoose.isValidObjectId(id)) {
     res.status(400).json({ error: "Invalid id" });
@@ -159,6 +169,22 @@ router.patch("/:id", async (req: Request, res: Response) => {
 
   if (completed !== undefined) todo.completed = completed;
   if (order !== undefined) todo.order = order;
+
+  if (dueAt !== undefined) {
+    if (dueAt === null) {
+      todo.dueAt = null;
+    } else if (typeof dueAt === "string") {
+      const parsedDue = parseIsoDueDate(dueAt);
+      if (!parsedDue) {
+        res.status(400).json({ error: "Invalid dueAt" });
+        return;
+      }
+      todo.dueAt = parsedDue;
+    } else {
+      res.status(400).json({ error: "Invalid dueAt" });
+      return;
+    }
+  }
 
   if (parentId !== undefined) {
     if (parentId === null) {

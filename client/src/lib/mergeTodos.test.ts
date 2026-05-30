@@ -11,6 +11,7 @@ function todo(partial: Partial<Todo> & Pick<Todo, "_id" | "title">): Todo {
     order: 0,
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-01-01T00:00:00.000Z",
+    dueAt: null,
     ...partial,
   };
 }
