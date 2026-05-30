@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/tiberiusuciu/todos/compare/v1.4.0...v1.4.1) (2026-05-30)
+
+
+### Bug Fixes
+
+* **task-menu:** Update task menu, update favicon and make semver stamp more visible ([24f6497](https://github.com/tiberiusuciu/todos/commit/24f6497c6f424a0b7c97b9eff2062f4472f637fc))
+
 # [1.4.0](https://github.com/tiberiusuciu/todos/compare/v1.3.1...v1.4.0) (2026-05-30)
 
 
