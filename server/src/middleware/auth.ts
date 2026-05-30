@@ -23,6 +23,27 @@ export function signToken(user: AuthUser): string {
   });
 }
 
+export function verifyToken(token: string): AuthUser | null {
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
+    if (!payload.sub || typeof payload.email !== "string") return null;
+    return { id: String(payload.sub), email: payload.email };
+  } catch {
+    return null;
+  }
+}
+
+export function parseCookieHeader(header: string | undefined): Record<string, string> {
+  if (!header) return {};
+  const out: Record<string, string> = {};
+  for (const part of header.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx === -1) continue;
+    out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim());
+  }
+  return out;
+}
+
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   const token = req.cookies?.token;
   if (!token) {
@@ -30,17 +51,13 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     return;
   }
 
-  try {
-    const payload = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
-    if (!payload.sub || typeof payload.email !== "string") {
-      res.status(401).json({ error: "Invalid token" });
-      return;
-    }
-    req.user = { id: String(payload.sub), email: payload.email };
-    next();
-  } catch {
+  const user = verifyToken(token);
+  if (!user) {
     res.status(401).json({ error: "Invalid token" });
+    return;
   }
+  req.user = user;
+  next();
 }
 
 export function getCookieOptions() {

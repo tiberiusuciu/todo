@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type CreateTodoInput, type ReorderItem, type Todo, type UpdateTodoInput } from "../lib/api";
+import { api, ApiError, type CreateTodoInput, type ReorderItem, type Todo, type UpdateTodoInput } from "../lib/api";
+import { mergeTodos, todosChanged } from "../lib/mergeTodos";
 import { getReorderUpdates, getReorderUpdatesFromDrag } from "../lib/reorderUtils";
 import { applyMoveToFlat, computeMove, type DropPreview, type MoveResult } from "../lib/moveUtils";
 import { buildTree, type TodoNode } from "../lib/treeUtils";
@@ -39,6 +40,10 @@ function mergeReorderItems(move: MoveResult): ReorderItem[] {
   return items;
 }
 
+function isConflictError(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 404 || error.status === 409);
+}
+
 export function useTodos(
   onCreateError?: (message: string) => void,
   userId?: string,
@@ -49,6 +54,8 @@ export function useTodos(
   const [tree, setTree] = useState<TodoNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const pendingOpsRef = useRef(0);
+  const pendingSyncRef = useRef(false);
 
   const commitTodos = useCallback((next: Todo[]) => {
     todosRef.current = next;
@@ -67,6 +74,42 @@ export function useTodos(
     const data = await api.list();
     applyTodos(data);
   }, [applyTodos]);
+
+  const syncRemote = useCallback(async (): Promise<boolean> => {
+    if (pendingOpsRef.current > 0) {
+      pendingSyncRef.current = true;
+      return false;
+    }
+    try {
+      const data = await api.list();
+      const merged = mergeTodos(todosRef.current, data);
+      const changed = todosChanged(todosRef.current, merged);
+      if (changed) commitTodos(merged);
+      return changed;
+    } catch {
+      return false;
+    }
+  }, [commitTodos]);
+
+  const finishPendingOp = useCallback(() => {
+    pendingOpsRef.current = Math.max(0, pendingOpsRef.current - 1);
+    if (pendingOpsRef.current === 0 && pendingSyncRef.current) {
+      pendingSyncRef.current = false;
+      void syncRemote();
+    }
+  }, [syncRemote]);
+
+  const withPending = useCallback(
+    async <T,>(fn: () => Promise<T>): Promise<T> => {
+      pendingOpsRef.current++;
+      try {
+        return await fn();
+      } finally {
+        finishPendingOp();
+      }
+    },
+    [finishPendingOp]
+  );
 
   useEffect(() => {
     if (!userId) {
@@ -91,36 +134,47 @@ export function useTodos(
     commitTodos([...snapshot, optimistic]);
     onOptimisticCreate?.(tempId);
 
-    try {
-      const saved = await api.create(input);
-      commitTodos(todosRef.current.map((t) => (t._id === tempId ? saved : t)));
-      return saved;
-    } catch {
-      commitTodos(snapshot);
-      onCreateError?.(CREATE_ERROR);
-      return null;
-    }
+    return withPending(async () => {
+      try {
+        const saved = await api.create(input);
+        commitTodos(todosRef.current.map((t) => (t._id === tempId ? saved : t)));
+        return saved;
+      } catch {
+        commitTodos(snapshot);
+        onCreateError?.(CREATE_ERROR);
+        return null;
+      }
+    });
   };
 
   const update = async (id: string, input: UpdateTodoInput) => {
-    const todo = await api.update(id, input);
-    commitTodos(
-      todosRef.current.map((t) => {
-        if (t._id !== id) return t;
-        return {
-          ...t,
-          ...todo,
-          order: input.order !== undefined ? todo.order : t.order,
-          parentId: input.parentId !== undefined ? todo.parentId : t.parentId,
-        };
-      })
-    );
-    return todo;
+    return withPending(async () => {
+      try {
+        const todo = await api.update(id, input);
+        commitTodos(
+          todosRef.current.map((t) => {
+            if (t._id !== id) return t;
+            return {
+              ...t,
+              ...todo,
+              order: input.order !== undefined ? todo.order : t.order,
+              parentId: input.parentId !== undefined ? todo.parentId : t.parentId,
+            };
+          })
+        );
+        return todo;
+      } catch (e) {
+        if (isConflictError(e)) await syncRemote();
+        throw e;
+      }
+    });
   };
 
   const remove = async (id: string) => {
-    await api.delete(id);
-    await refresh();
+    await withPending(async () => {
+      await api.delete(id);
+      await syncRemote();
+    });
   };
 
   const applyReorder = useCallback(
@@ -136,8 +190,15 @@ export function useTodos(
   );
 
   const reorder = async (items: ReorderItem[]) => {
-    await api.reorder(items);
-    applyReorder(items);
+    await withPending(async () => {
+      try {
+        await api.reorder(items);
+        applyReorder(items);
+      } catch (e) {
+        if (isConflictError(e)) await syncRemote();
+        throw e;
+      }
+    });
   };
 
   const moveSibling = async (siblings: TodoNode[], id: string, direction: "up" | "down") => {
@@ -164,18 +225,33 @@ export function useTodos(
     const draggedBefore = snapshot.find((t) => t._id === dragId);
     const parentChanged = draggedBefore?.parentId !== move.parentId;
 
-    try {
-      if (parentChanged) {
-        await api.update(dragId, { parentId: move.parentId, order: move.order });
+    await withPending(async () => {
+      try {
+        if (parentChanged) {
+          await api.update(dragId, { parentId: move.parentId, order: move.order });
+        }
+        if (items.length > 0) {
+          await api.reorder(items);
+        }
+      } catch (e) {
+        commitTodos(snapshot);
+        if (isConflictError(e)) await syncRemote();
+        onCreateError?.(MOVE_ERROR);
       }
-      if (items.length > 0) {
-        await api.reorder(items);
-      }
-    } catch {
-      commitTodos(snapshot);
-      onCreateError?.(MOVE_ERROR);
-    }
+    });
   };
 
-  return { tree, loading, error, create, update, remove, moveSibling, reorderByDrag, moveTodo, refresh };
+  return {
+    tree,
+    loading,
+    error,
+    create,
+    update,
+    remove,
+    moveSibling,
+    reorderByDrag,
+    moveTodo,
+    refresh,
+    syncRemote,
+  };
 }

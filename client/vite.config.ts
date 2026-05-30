@@ -23,7 +23,10 @@ export default defineConfig({
       usePolling: process.env.CHOKIDAR_USEPOLLING === "true",
     },
     proxy: {
-      "/api": process.env.VITE_API_PROXY_TARGET ?? "http://localhost:3001",
+      "/api": {
+        target: process.env.VITE_API_PROXY_TARGET ?? "http://localhost:3001",
+        ws: true,
+      },
     },
   },
 });

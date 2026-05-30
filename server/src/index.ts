@@ -1,5 +1,7 @@
+import http from "http";
 import mongoose from "mongoose";
 import { createApp } from "./app.js";
+import { attachSyncServer } from "./sync/wsServer.js";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
 const MONGODB_URI = process.env.MONGODB_URI ?? "mongodb://localhost:27017/todos";
@@ -20,7 +22,9 @@ async function start() {
   await mongoose.connect(MONGODB_URI);
   console.log("Connected to MongoDB");
 
-  app.listen(PORT, () => {
+  const server = http.createServer(app);
+  attachSyncServer(server);
+  server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
 }

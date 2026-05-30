@@ -34,6 +34,15 @@ export type UpdateTodoInput = {
 
 const BASE = "/api/todos";
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     headers: { "Content-Type": "application/json" },
@@ -42,7 +51,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error ?? `Request failed: ${res.status}`);
+    throw new ApiError(err.error ?? `Request failed: ${res.status}`, res.status);
   }
   return res.json();
 }

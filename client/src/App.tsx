@@ -7,6 +7,7 @@ import { useCollapsedState } from "./hooks/useCollapsed";
 import { useShowCompleted } from "./hooks/useShowCompleted";
 import { useToast } from "./hooks/useToast";
 import { useTodos } from "./hooks/useTodos";
+import { useTodoSync } from "./hooks/useTodoSync";
 import { TodoDragProvider, useTreeDragDrop } from "./hooks/useTreeDragDrop";
 import type { DropPreview } from "./lib/moveUtils";
 import { countCompleted, filterCompleted, buildDirectChildProgressMap, type TodoNode } from "./lib/treeUtils";
@@ -17,8 +18,14 @@ export default function App() {
   const { message, showToast, dismissToast } = useToast();
   const [newTitle, setNewTitle] = useState("");
   const [scrollToTodoId, setScrollToTodoId] = useState<string | null>(null);
-  const { tree, loading, error, create, update, remove, moveSibling, moveTodo } =
+  const { tree, loading, error, create, update, remove, moveSibling, moveTodo, syncRemote } =
     useTodos(showToast, user?.id, setScrollToTodoId);
+
+  useTodoSync({
+    userId: user?.id,
+    onSync: syncRemote,
+    onRemoteChange: () => showToast("Updated from another device"),
+  });
   const { isCollapsed, toggle } = useCollapsedState();
   const { showCompleted, toggle: toggleShowCompleted } = useShowCompleted();
 

@@ -3,11 +3,16 @@ import mongoose from "mongoose";
 import { Todo } from "../models/Todo.js";
 import { suggestEmoji } from "../services/suggestEmoji.js";
 import { isValidEmoji } from "../utils/emoji.js";
+import { broadcastTodosChanged } from "../sync/broadcast.js";
 
 const router = Router();
 
 function userFilter(req: Request) {
   return { userId: req.user!.id };
+}
+
+function notifyTodosChanged(userId: string) {
+  broadcastTodosChanged(userId, { type: "todos:changed", at: new Date().toISOString() });
 }
 
 async function collectDescendantIds(rootId: string, userId: string): Promise<string[]> {
@@ -82,6 +87,7 @@ router.post("/", async (req: Request, res: Response) => {
     order: resolvedOrder,
   });
 
+  notifyTodosChanged(userId);
   res.status(201).json(todo);
 });
 
@@ -113,6 +119,7 @@ router.patch("/reorder", async (req: Request, res: Response) => {
   );
 
   const results = await Promise.all(ops);
+  notifyTodosChanged(userId);
   res.json(results.filter(Boolean));
 });
 
@@ -175,6 +182,7 @@ router.patch("/:id", async (req: Request, res: Response) => {
   }
 
   await todo.save();
+  notifyTodosChanged(userId);
   res.json(todo);
 });
 
@@ -195,6 +203,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
 
   const idsToDelete = await collectDescendantIds(id, userId);
   await Todo.deleteMany({ _id: { $in: idsToDelete }, userId });
+  notifyTodosChanged(userId);
   res.json({ deleted: idsToDelete.length });
 });
 
