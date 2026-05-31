@@ -42,7 +42,7 @@ type Props = {
   dragRowHeight: number;
   showInsertGhost: boolean;
   onUpdate: (id: string, data: UpdateData) => Promise<void>;
-  onCreate: (parentId: string, title: string) => Promise<boolean>;
+  onCreate: (parentId: string, title: string) => void;
   onDelete: (id: string, hasChildren: boolean) => Promise<void>;
   isCollapsed: (id: string) => boolean;
   toggleCollapsed: (id: string) => void;
@@ -74,7 +74,7 @@ export function TodoItem({
   node,
   listParentId,
   depth,
-  siblings,
+  siblings: _siblings,
   scrollContainerRef,
   scrollToTodoId,
   onScrolledToTodo,
@@ -105,12 +105,7 @@ export function TodoItem({
   const notesRef = useRef<HTMLTextAreaElement>(null);
   const childRef = useRef<HTMLInputElement>(null);
 
-  const dragDisabled =
-    siblings.some((s) => s.emojiPending) ||
-    !!node.emojiPending ||
-    editingTitle ||
-    editingNotes ||
-    addingChild;
+  const dragDisabled = editingTitle || editingNotes || addingChild;
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useDraggable({
     id: node._id,
     data: { node, parentId: listParentId, depth },
@@ -120,12 +115,12 @@ export function TodoItem({
   const childCount = node.children.length;
   const collapsed = isCollapsed(node._id);
   const childrenOpen = childCount > 0 && !collapsed;
-  const isPending = !!node.emojiPending;
+  const isCreating = !!node.emojiPending || node._id.startsWith("temp-");
   const childProgress = childProgressMap.get(node._id);
   const isBeingDragged = isDragging || activeId === node._id;
   const isNestTarget = dropPreview?.kind === "nest" && dropPreview.targetId === node._id;
   const parentKey = listParentId ?? "root";
-  const showDueMetadata = !!node.dueAt && !isPending && !editingTitle && !editingNotes;
+  const showDueMetadata = !!node.dueAt && !isCreating && !editingTitle && !editingNotes;
 
   const openDuePickerFromMenu = () => {
     pickerAnchorRef.current = menuTriggerRef.current;
@@ -142,27 +137,25 @@ export function TodoItem({
   }, []);
 
   const startEditTitle = useCallback(() => {
-    if (isPending) return;
     setPreviewExpanded(false);
     setEditingTitle(true);
-  }, [isPending]);
+  }, []);
 
   const startEditNotes = useCallback(() => {
-    if (isPending) return;
     setPreviewExpanded(false);
     setEditingNotes(true);
-  }, [isPending]);
+  }, []);
 
   const titlePress = useLongPress({
     onLongPress: togglePreview,
     onClick: startEditTitle,
-    disabled: isPending || editingTitle || editingNotes,
+    disabled: editingTitle || editingNotes,
   });
 
   const notesPress = useLongPress({
     onLongPress: togglePreview,
     onClick: startEditNotes,
-    disabled: isPending || editingTitle || editingNotes || !node.notes,
+    disabled: editingTitle || editingNotes || !node.notes,
   });
 
   const textLayout = previewExpanded
@@ -194,17 +187,6 @@ export function TodoItem({
   useEffect(() => {
     if (addingChild) childRef.current?.focus();
   }, [addingChild]);
-
-  useEffect(() => {
-    if (!previewExpanded) return;
-    const onPointerDown = (e: globalThis.PointerEvent) => {
-      if (itemRef.current && !itemRef.current.contains(e.target as Node)) {
-        setPreviewExpanded(false);
-      }
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [previewExpanded]);
 
   useLayoutEffect(() => {
     if (scrollToTodoId !== node._id || !itemRef.current) return;
@@ -242,7 +224,7 @@ export function TodoItem({
     }
   };
 
-  const submitChild = async (e: FormEvent) => {
+  const submitChild = (e: FormEvent) => {
     e.preventDefault();
     const trimmed = childTitle.trim();
     if (!trimmed) {
@@ -250,11 +232,9 @@ export function TodoItem({
       setChildTitle("");
       return;
     }
-    const ok = await onCreate(node._id, trimmed);
-    if (ok) {
-      setChildTitle("");
-      setAddingChild(false);
-    }
+    setChildTitle("");
+    setAddingChild(false);
+    onCreate(node._id, trimmed);
   };
 
   const progressBadge = childProgress ? (
@@ -277,7 +257,7 @@ export function TodoItem({
         className="todo-row-target"
         data-todo-row={node._id}
         data-todo-parent={parentKey}
-        data-todo-pending={isPending ? "true" : undefined}
+        data-todo-pending={isCreating ? "true" : undefined}
       >
         <div
           className={`todo-drag-placeholder-inner${showInsertGhost ? " is-open" : ""}`}
@@ -312,14 +292,14 @@ export function TodoItem({
               <input
                 type="checkbox"
                 checked={node.completed}
-                disabled={isPending}
+                disabled={isCreating}
                 onChange={(e) => onUpdate(node._id, { completed: e.target.checked })}
                 className="todo-checkbox"
               />
 
               <EmojiPickerPopover
                 emoji={node.emoji || "📋"}
-                loading={isPending}
+                loading={isCreating}
                 scrollContainerRef={scrollContainerRef}
                 onSelect={(emoji) => onUpdate(node._id, { emoji })}
               />
@@ -340,10 +320,10 @@ export function TodoItem({
                   ) : (
                     <button
                       type="button"
-                      disabled={isPending}
-                      className={`block w-full min-w-0 text-left disabled:cursor-default ${
+                      className={`block w-full min-w-0 text-left ${
                         node.completed ? "line-through text-zinc-500" : "text-zinc-100"
                       } text-base`}
+                      aria-expanded={previewExpanded}
                       {...titlePress}
                     >
                       <span className={textLayout}>{node.title}</span>
@@ -364,8 +344,8 @@ export function TodoItem({
                   ) : (
                     <button
                       type="button"
-                      disabled={isPending}
-                      className="mt-0.5 block w-full min-w-0 text-left text-sm text-zinc-400 hover:text-zinc-300 disabled:cursor-default disabled:hover:text-zinc-400"
+                      className="mt-0.5 block w-full min-w-0 text-left text-sm text-zinc-400 hover:text-zinc-300"
+                      aria-expanded={node.notes ? previewExpanded : undefined}
                       {...(node.notes ? notesPress : { onClick: startEditNotes })}
                     >
                       {node.notes ? (
@@ -381,10 +361,10 @@ export function TodoItem({
                   <div ref={previewInnerRef}>
                     <button
                       type="button"
-                      disabled={isPending}
-                      className={`block w-full min-w-0 text-left disabled:cursor-default ${
+                      className={`block w-full min-w-0 text-left ${
                         node.completed ? "line-through text-zinc-500" : "text-zinc-100"
                       } text-base`}
+                      aria-expanded={previewExpanded}
                       {...titlePress}
                     >
                       <span className={textLayout}>{node.title}</span>
@@ -392,8 +372,8 @@ export function TodoItem({
 
                     <button
                       type="button"
-                      disabled={isPending}
-                      className="mt-0.5 block w-full min-w-0 text-left text-sm text-zinc-400 hover:text-zinc-300 disabled:cursor-default disabled:hover:text-zinc-400"
+                      className="mt-0.5 block w-full min-w-0 text-left text-sm text-zinc-400 hover:text-zinc-300"
+                      aria-expanded={node.notes ? previewExpanded : undefined}
                       {...(node.notes ? notesPress : { onClick: startEditNotes })}
                     >
                       {node.notes ? (
@@ -410,7 +390,7 @@ export function TodoItem({
                 <button
                   ref={dueMetadataRef}
                   type="button"
-                  disabled={isPending}
+                  disabled={isCreating}
                   onClick={(e) => openDuePickerFromMetadata(e.currentTarget)}
                   className="todo-metadata-due-date"
                   aria-label={`Due ${formatDueDate(node.dueAt)}`}
@@ -427,16 +407,16 @@ export function TodoItem({
               open={duePickerOpen}
               onOpenChange={setDuePickerOpen}
               anchorRef={pickerAnchorRef}
-              disabled={isPending}
+              disabled={isCreating}
               scrollContainerRef={scrollContainerRef}
               onSave={(dueAt) => onUpdate(node._id, { dueAt })}
             />
 
-            <div className={`todo-item-actions self-start pt-1 ${isPending ? "opacity-40" : ""}`}>
+            <div className="todo-item-actions self-start pt-1">
               {progressBadge}
               <TodoActionsMenu
                 ref={menuTriggerRef}
-                disabled={isPending}
+                disabled={isCreating}
                 hasDueDate={!!node.dueAt}
                 scrollContainerRef={scrollContainerRef}
                 onAddSubtask={() => setAddingChild(true)}

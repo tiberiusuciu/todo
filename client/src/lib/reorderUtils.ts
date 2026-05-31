@@ -37,7 +37,6 @@ export function getReorderUpdatesFromDrag(
   if (dragId === targetId) return null;
 
   const sorted = sortSiblings(siblings);
-  if (sorted.some(isPendingNode)) return null;
   const fromIdx = sorted.findIndex((s) => s._id === dragId);
   const toIdx = sorted.findIndex((s) => s._id === targetId);
   if (fromIdx === -1 || toIdx === -1) return null;

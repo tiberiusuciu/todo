@@ -26,23 +26,15 @@ export function isPendingTodo(flat: Todo[], id: string): boolean {
   return !!todo?.emojiPending;
 }
 
-function siblingGroupHasPending(flat: Todo[], parentId: string | null): boolean {
-  return getSiblings(flat, parentId).some((t) => isPendingTodo(flat, t._id));
-}
-
 export function isReorderBlocked(flat: Todo[], dragId: string, preview: DropPreview): boolean {
-  const dragged = flat.find((t) => t._id === dragId);
-  if (!dragged || isPendingTodo(flat, dragId)) return true;
+  if (!flat.find((t) => t._id === dragId)) return true;
 
   if (preview.kind === "nest") {
     if (isPendingTodo(flat, preview.targetId)) return true;
-    if (siblingGroupHasPending(flat, preview.targetId)) return true;
-  } else {
-    if (preview.beforeId !== null && isPendingTodo(flat, preview.beforeId)) return true;
-    if (siblingGroupHasPending(flat, preview.parentId)) return true;
+  } else if (preview.beforeId !== null && isPendingTodo(flat, preview.beforeId)) {
+    return true;
   }
 
-  if (siblingGroupHasPending(flat, dragged.parentId)) return true;
   return false;
 }
 

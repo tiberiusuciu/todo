@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import authRouter from "./routes/auth.js";
 import todosRouter from "./routes/todos.js";
 import { requireAuth } from "./middleware/auth.js";
+import { getAppVersion } from "./version.js";
 
 export function createApp() {
   const app = express();
@@ -15,6 +16,11 @@ export function createApp() {
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });
+  });
+
+  app.get("/api/version", (_req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.json({ version: getAppVersion() });
   });
 
   app.use("/api/auth", authRouter);

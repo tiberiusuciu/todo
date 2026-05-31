@@ -19,7 +19,14 @@ export default function App() {
   const [newTitle, setNewTitle] = useState("");
   const [scrollToTodoId, setScrollToTodoId] = useState<string | null>(null);
   const { tree, loading, error, create, update, remove, moveTodo, syncRemote } =
-    useTodos(showToast, user?.id, setScrollToTodoId);
+    useTodos(
+      (message, failedInput) => {
+        showToast(message);
+        if (failedInput?.title) setNewTitle(failedInput.title);
+      },
+      user?.id,
+      setScrollToTodoId
+    );
 
   useTodoSync({
     userId: user?.id,
@@ -65,13 +72,12 @@ export default function App() {
   const completedCount = useMemo(() => countCompleted(tree), [tree]);
   const childProgressMap = useMemo(() => buildDirectChildProgressMap(tree), [tree]);
 
-  const handleAddRoot = async (e: FormEvent) => {
+  const handleAddRoot = (e: FormEvent) => {
     e.preventDefault();
     const trimmed = newTitle.trim();
     if (!trimmed) return;
     setNewTitle("");
-    const saved = await create({ title: trimmed });
-    if (!saved) setNewTitle(trimmed);
+    create({ title: trimmed });
   };
 
   const handleUpdate = async (
@@ -81,10 +87,9 @@ export default function App() {
     await update(id, data);
   };
 
-  const handleCreateChild = async (parentId: string, title: string) => {
+  const handleCreateChild = (parentId: string, title: string) => {
     if (isCollapsed(parentId)) toggle(parentId);
-    const saved = await create({ title, parentId });
-    return saved !== null;
+    create({ title, parentId });
   };
 
   const handleDelete = async (id: string, hasChildren: boolean) => {

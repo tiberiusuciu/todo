@@ -12,6 +12,16 @@ type ZonedParts = {
   weekday: string;
 };
 
+type PhraseKind = "weekday" | "relative" | "calendar" | "nextWeek" | "nextPeriod";
+type PhrasePosition = "leading" | "trailing";
+
+type DatePhraseMatch = {
+  kind: PhraseKind;
+  position: PhrasePosition;
+  groups: RegExpMatchArray;
+  title: string;
+};
+
 const WEEKDAY_TO_DOW: Record<string, number> = {
   sun: 0,
   mon: 1,
@@ -43,15 +53,28 @@ const MONTH_TO_NUM: Record<string, number> = {
   dec: 12,
 };
 
-const TIME_PATTERN = "(\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)|\\d{1,2}:\\d{2})";
+const VAGUE_TIME_PATTERN = "noon|midday|morning|afternoon|evening|night";
+const TIME_EXPR = `(?:\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)|\\d{1,2}:\\d{2}|${VAGUE_TIME_PATTERN})`;
+const TIME_CAPTURE = `(${TIME_EXPR})`;
+const TIME_PATTERN = TIME_EXPR;
 
 export const DEFAULT_DUE_HOUR = 9;
 export const DEFAULT_DUE_MINUTE = 0;
 
-const OPTIONAL_TIME_SUFFIX = `(?:\\s+(?:at\\s+)?${TIME_PATTERN})?`;
+const VAGUE_TIME_MAP: Record<string, { hour: number; minute: number }> = {
+  noon: { hour: 12, minute: 0 },
+  midday: { hour: 12, minute: 0 },
+  morning: { hour: 9, minute: 0 },
+  afternoon: { hour: 14, minute: 0 },
+  evening: { hour: 18, minute: 0 },
+  night: { hour: 21, minute: 0 },
+};
+
+const OPTIONAL_TIME_SUFFIX = `(?:\\s+(?:at\\s+)?${TIME_CAPTURE})?`;
+const LEADING_EXPLICIT_SEP = `(?:\\s*,\\s*|\\s+[-–—]\\s*|\\s+:\\s*)`;
 
 const WEEKDAY_TRAILING_RE = new RegExp(
-  `[\\s,]+(?:(?:on|by|at|before)\\s+)?(?:(next|last|past|previous)\\s+)?(${WEEKDAY_PATTERN})${OPTIONAL_TIME_SUFFIX}\\s*$`,
+  `[\\s,]+(?:(?:on|by|at|before)\\s+)?(?:(this|next|last|past|previous)\\s+)?(${WEEKDAY_PATTERN})${OPTIONAL_TIME_SUFFIX}\\s*$`,
   "i"
 );
 
@@ -72,6 +95,46 @@ const NEXT_WEEK_TRAILING_RE = new RegExp(
 
 const NEXT_PERIOD_TRAILING_RE = new RegExp(
   `[\\s,]+(?:(?:on|by|at|in)\\s+)?next\\s+(month|year|${MONTH_PATTERN})${OPTIONAL_TIME_SUFFIX}\\s*$`,
+  "i"
+);
+
+const WEEKDAY_LEADING_EXPLICIT_SEP_RE = new RegExp(
+  `^(?:(this|next|last|past|previous)\\s+)?(${WEEKDAY_PATTERN})${OPTIONAL_TIME_SUFFIX}${LEADING_EXPLICIT_SEP}(.+)$`,
+  "i"
+);
+
+const WEEKDAY_LEADING_TIME_SPACE_RE = new RegExp(
+  `^(?:(this|next|last|past|previous)\\s+)?(${WEEKDAY_PATTERN})\\s+(?:at\\s+)?${TIME_CAPTURE}\\s+(.+)$`,
+  "i"
+);
+
+const RELATIVE_LEADING_EXPLICIT_SEP_RE = new RegExp(
+  `^(today|tonight|tomorrow)${OPTIONAL_TIME_SUFFIX}${LEADING_EXPLICIT_SEP}(.+)$`,
+  "i"
+);
+
+const RELATIVE_LEADING_TIME_SPACE_RE = new RegExp(
+  `^(today|tonight|tomorrow)\\s+(?:at\\s+)?${TIME_CAPTURE}\\s+(.+)$`,
+  "i"
+);
+
+const CALENDAR_LEADING_EXPLICIT_SEP_RE = new RegExp(
+  `^(?:on\\s+)?(${MONTH_PATTERN})\\s+(\\d{1,2})(?:st|nd|rd|th)?${OPTIONAL_TIME_SUFFIX}${LEADING_EXPLICIT_SEP}(.+)$`,
+  "i"
+);
+
+const CALENDAR_LEADING_TIME_SPACE_RE = new RegExp(
+  `^(?:on\\s+)?(${MONTH_PATTERN})\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:at\\s+)?${TIME_CAPTURE}\\s+(.+)$`,
+  "i"
+);
+
+const NEXT_WEEK_LEADING_EXPLICIT_SEP_RE = new RegExp(
+  `^next\\s+week${OPTIONAL_TIME_SUFFIX}${LEADING_EXPLICIT_SEP}(.+)$`,
+  "i"
+);
+
+const NEXT_PERIOD_LEADING_EXPLICIT_SEP_RE = new RegExp(
+  `^next\\s+(month|year|${MONTH_PATTERN})${OPTIONAL_TIME_SUFFIX}${LEADING_EXPLICIT_SEP}(.+)$`,
   "i"
 );
 
@@ -184,18 +247,94 @@ function resolveCalendarDate(
   return candidate;
 }
 
-function matchTrailingDatePhrase(title: string): RegExpMatchArray | null {
-  return (
-    title.match(WEEKDAY_TRAILING_RE) ??
-    title.match(NEXT_WEEK_TRAILING_RE) ??
-    title.match(NEXT_PERIOD_TRAILING_RE) ??
-    title.match(RELATIVE_TRAILING_RE) ??
-    title.match(CALENDAR_TRAILING_RE)
-  );
+function addCalendarDays(
+  parts: Pick<ZonedParts, "year" | "month" | "day">,
+  days: number
+): Pick<ZonedParts, "year" | "month" | "day"> {
+  const d = new Date(parts.year, parts.month - 1, parts.day + days);
+  return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() };
+}
+
+export function parseTimeToken(token: string | undefined): { hour: number; minute: number } | null {
+  if (!token) return null;
+  const match = token.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+  if (!match) return null;
+
+  let hour = Number(match[1]);
+  const minute = match[2] ? Number(match[2]) : 0;
+  const meridiem = match[3]?.toLowerCase();
+
+  if (meridiem === "pm" && hour < 12) hour += 12;
+  if (meridiem === "am" && hour === 12) hour = 0;
+  if (hour > 23 || minute > 59) return null;
+
+  return { hour, minute };
+}
+
+export function parseTimeExpression(token: string | undefined): { hour: number; minute: number } | null {
+  if (!token) return null;
+  const vague = VAGUE_TIME_MAP[token.trim().toLowerCase()];
+  if (vague) return vague;
+  return parseTimeToken(token);
 }
 
 function defaultDueTime(timeToken: string | undefined): { hour: number; minute: number } {
-  return parseTimeToken(timeToken) ?? { hour: DEFAULT_DUE_HOUR, minute: DEFAULT_DUE_MINUTE };
+  return parseTimeExpression(timeToken) ?? { hour: DEFAULT_DUE_HOUR, minute: DEFAULT_DUE_MINUTE };
+}
+
+export function findWeekdayOccurrence(
+  targetDow: number,
+  hour: number,
+  minute: number,
+  referenceDate: Date,
+  timeZone: string,
+  direction: "next" | "previous"
+): Date {
+  const refParts = getZonedParts(referenceDate, timeZone);
+  const refMs = referenceDate.getTime();
+
+  for (let offset = 0; offset <= 13; offset++) {
+    const dayOffset = direction === "next" ? offset : -offset;
+    if (direction === "previous" && offset === 0) continue;
+
+    const day = addCalendarDays(refParts, dayOffset);
+    const candidate = zonedTimeToUtc(day.year, day.month, day.day, hour, minute, timeZone);
+    const dow = weekdayNameToDow(getZonedParts(candidate, timeZone).weekday);
+    if (dow !== targetDow) continue;
+
+    if (direction === "next" && candidate.getTime() > refMs) return candidate;
+    if (direction === "previous" && candidate.getTime() < refMs) return candidate;
+  }
+
+  return zonedTimeToUtc(refParts.year, refParts.month, refParts.day, hour, minute, timeZone);
+}
+
+function findThisWeekWeekday(
+  targetDow: number,
+  hour: number,
+  minute: number,
+  referenceDate: Date,
+  timeZone: string
+): Date {
+  const refParts = getZonedParts(referenceDate, timeZone);
+  const refDow = weekdayNameToDow(refParts.weekday);
+  if (refDow === null) {
+    return findWeekdayOccurrence(targetDow, hour, minute, referenceDate, timeZone, "next");
+  }
+
+  const sunday = addCalendarDays(refParts, -refDow);
+  const targetDay = addCalendarDays(sunday, targetDow);
+  const candidate = zonedTimeToUtc(
+    targetDay.year,
+    targetDay.month,
+    targetDay.day,
+    hour,
+    minute,
+    timeZone
+  );
+
+  if (candidate.getTime() > referenceDate.getTime()) return candidate;
+  return findWeekdayOccurrence(targetDow, hour, minute, referenceDate, timeZone, "next");
 }
 
 function findNextCalendarWeekWeekday(
@@ -236,6 +375,9 @@ function resolveWeekdayDueDate(
   }
   if (mod === "next") {
     return findNextCalendarWeekWeekday(dow, hour, minute, referenceDate, timeZone);
+  }
+  if (mod === "this") {
+    return findThisWeekWeekday(dow, hour, minute, referenceDate, timeZone);
   }
   return findWeekdayOccurrence(dow, hour, minute, referenceDate, timeZone, "next");
 }
@@ -296,57 +438,6 @@ function resolveNextNamedMonth(
   return candidate;
 }
 
-function addCalendarDays(
-  parts: Pick<ZonedParts, "year" | "month" | "day">,
-  days: number
-): Pick<ZonedParts, "year" | "month" | "day"> {
-  const d = new Date(parts.year, parts.month - 1, parts.day + days);
-  return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() };
-}
-
-export function parseTimeToken(token: string | undefined): { hour: number; minute: number } | null {
-  if (!token) return null;
-  const match = token.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
-  if (!match) return null;
-
-  let hour = Number(match[1]);
-  const minute = match[2] ? Number(match[2]) : 0;
-  const meridiem = match[3]?.toLowerCase();
-
-  if (meridiem === "pm" && hour < 12) hour += 12;
-  if (meridiem === "am" && hour === 12) hour = 0;
-  if (hour > 23 || minute > 59) return null;
-
-  return { hour, minute };
-}
-
-export function findWeekdayOccurrence(
-  targetDow: number,
-  hour: number,
-  minute: number,
-  referenceDate: Date,
-  timeZone: string,
-  direction: "next" | "previous"
-): Date {
-  const refParts = getZonedParts(referenceDate, timeZone);
-  const refMs = referenceDate.getTime();
-
-  for (let offset = 0; offset <= 13; offset++) {
-    const dayOffset = direction === "next" ? offset : -offset;
-    if (direction === "previous" && offset === 0) continue;
-
-    const day = addCalendarDays(refParts, dayOffset);
-    const candidate = zonedTimeToUtc(day.year, day.month, day.day, hour, minute, timeZone);
-    const dow = weekdayNameToDow(getZonedParts(candidate, timeZone).weekday);
-    if (dow !== targetDow) continue;
-
-    if (direction === "next" && candidate.getTime() > refMs) return candidate;
-    if (direction === "previous" && candidate.getTime() < refMs) return candidate;
-  }
-
-  return zonedTimeToUtc(refParts.year, refParts.month, refParts.day, hour, minute, timeZone);
-}
-
 function resolveRelativeDay(
   token: string,
   hour: number,
@@ -372,10 +463,205 @@ function resolveRelativeDay(
   return candidate;
 }
 
+function titleFromTrailing(trimmed: string, match: RegExpMatchArray): string | null {
+  if (match.index === undefined || match.index <= 0) return null;
+  const title = trimmed.slice(0, match.index).replace(/[,\s]+$/, "").trim();
+  return title || null;
+}
+
+function matchTrailingDatePhrase(trimmed: string): DatePhraseMatch | null {
+  const weekdayMatch = trimmed.match(WEEKDAY_TRAILING_RE);
+  if (weekdayMatch) {
+    const title = titleFromTrailing(trimmed, weekdayMatch);
+    if (!title) return null;
+    return { kind: "weekday", position: "trailing", groups: weekdayMatch, title };
+  }
+
+  const nextWeekMatch = trimmed.match(NEXT_WEEK_TRAILING_RE);
+  if (nextWeekMatch) {
+    const title = titleFromTrailing(trimmed, nextWeekMatch);
+    if (!title) return null;
+    return { kind: "nextWeek", position: "trailing", groups: nextWeekMatch, title };
+  }
+
+  const nextPeriodMatch = trimmed.match(NEXT_PERIOD_TRAILING_RE);
+  if (nextPeriodMatch) {
+    const title = titleFromTrailing(trimmed, nextPeriodMatch);
+    if (!title) return null;
+    return { kind: "nextPeriod", position: "trailing", groups: nextPeriodMatch, title };
+  }
+
+  const relativeMatch = trimmed.match(RELATIVE_TRAILING_RE);
+  if (relativeMatch) {
+    const title = titleFromTrailing(trimmed, relativeMatch);
+    if (!title) return null;
+    return { kind: "relative", position: "trailing", groups: relativeMatch, title };
+  }
+
+  const calendarMatch = trimmed.match(CALENDAR_TRAILING_RE);
+  if (calendarMatch) {
+    const title = titleFromTrailing(trimmed, calendarMatch);
+    if (!title) return null;
+    return { kind: "calendar", position: "trailing", groups: calendarMatch, title };
+  }
+
+  return null;
+}
+
+function matchLeadingDatePhrase(trimmed: string): DatePhraseMatch | null {
+  let match = trimmed.match(WEEKDAY_LEADING_EXPLICIT_SEP_RE);
+  if (match) {
+    const title = match[4]?.trim();
+    if (!title) return null;
+    return { kind: "weekday", position: "leading", groups: match, title };
+  }
+
+  match = trimmed.match(WEEKDAY_LEADING_TIME_SPACE_RE);
+  if (match) {
+    const title = match[4]?.trim();
+    if (!title) return null;
+    return { kind: "weekday", position: "leading", groups: match, title };
+  }
+
+  match = trimmed.match(NEXT_WEEK_LEADING_EXPLICIT_SEP_RE);
+  if (match) {
+    const title = match[2]?.trim();
+    if (!title) return null;
+    return { kind: "nextWeek", position: "leading", groups: match, title };
+  }
+
+  match = trimmed.match(NEXT_PERIOD_LEADING_EXPLICIT_SEP_RE);
+  if (match) {
+    const title = match[3]?.trim();
+    if (!title) return null;
+    return { kind: "nextPeriod", position: "leading", groups: match, title };
+  }
+
+  match = trimmed.match(RELATIVE_LEADING_EXPLICIT_SEP_RE);
+  if (match) {
+    const title = match[3]?.trim();
+    if (!title) return null;
+    return { kind: "relative", position: "leading", groups: match, title };
+  }
+
+  match = trimmed.match(RELATIVE_LEADING_TIME_SPACE_RE);
+  if (match) {
+    const title = match[3]?.trim();
+    if (!title) return null;
+    return { kind: "relative", position: "leading", groups: match, title };
+  }
+
+  match = trimmed.match(CALENDAR_LEADING_EXPLICIT_SEP_RE);
+  if (match) {
+    const title = match[4]?.trim();
+    if (!title) return null;
+    return { kind: "calendar", position: "leading", groups: match, title };
+  }
+
+  match = trimmed.match(CALENDAR_LEADING_TIME_SPACE_RE);
+  if (match) {
+    const title = match[4]?.trim();
+    if (!title) return null;
+    return { kind: "calendar", position: "leading", groups: match, title };
+  }
+
+  return null;
+}
+
+function extractDatePhrase(trimmed: string): DatePhraseMatch | null {
+  return matchTrailingDatePhrase(trimmed) ?? matchLeadingDatePhrase(trimmed);
+}
+
+function getWeekdayFields(
+  match: DatePhraseMatch
+): { modifier: string | undefined; weekday: string; timeToken: string | undefined } {
+  return {
+    modifier: match.groups[1],
+    weekday: match.groups[2],
+    timeToken: match.groups[3],
+  };
+}
+
+function resolveDatePhraseMatch(
+  match: DatePhraseMatch,
+  referenceDate: Date,
+  timeZone: string
+): { title: string; dueAt: Date } | null {
+  switch (match.kind) {
+    case "weekday": {
+      const { modifier, weekday, timeToken } = getWeekdayFields(match);
+      const dueAt = resolveWeekdayDueDate(
+        weekday,
+        modifier,
+        timeToken,
+        referenceDate,
+        timeZone
+      );
+      if (!dueAt) return null;
+      return { title: match.title, dueAt };
+    }
+    case "nextWeek": {
+      const timeToken = match.groups[1];
+      const dueAt = resolveNextWeek(timeToken, referenceDate, timeZone);
+      return { title: match.title, dueAt };
+    }
+    case "nextPeriod": {
+      const token = match.groups[1].toLowerCase();
+      const timeToken = match.groups[2];
+      let dueAt: Date | null = null;
+      if (token === "month") {
+        dueAt = resolveNextMonth(timeToken, referenceDate, timeZone);
+      } else if (token === "year") {
+        dueAt = resolveNextYear(timeToken, referenceDate, timeZone);
+      } else {
+        dueAt = resolveNextNamedMonth(match.groups[1], timeToken, referenceDate, timeZone);
+      }
+      if (!dueAt) return null;
+      return { title: match.title, dueAt };
+    }
+    case "relative": {
+      const relativeToken = match.groups[1];
+      const timeToken = match.groups[2];
+      const parsedTime = defaultDueTime(timeToken);
+      const dueAt = resolveRelativeDay(
+        relativeToken,
+        parsedTime.hour,
+        parsedTime.minute,
+        referenceDate,
+        timeZone
+      );
+      return { title: match.title, dueAt };
+    }
+    case "calendar": {
+      const monthName = match.groups[1];
+      const day = Number(match.groups[2]);
+      const timeToken = match.groups[3];
+      const month = monthNameToNumber(monthName);
+      const parsedTime = defaultDueTime(timeToken);
+      if (month === null) return null;
+      const dueAt = resolveCalendarDate(
+        month,
+        day,
+        parsedTime.hour,
+        parsedTime.minute,
+        referenceDate,
+        timeZone
+      );
+      if (!dueAt) return null;
+      return { title: match.title, dueAt };
+    }
+  }
+}
+
+export function stripDatePhrase(title: string): string | null {
+  const trimmed = title.trim();
+  const match = extractDatePhrase(trimmed);
+  return match?.title ?? null;
+}
+
+/** @deprecated Use stripDatePhrase */
 export function stripTrailingDatePhrase(title: string): string | null {
-  const match = matchTrailingDatePhrase(title);
-  if (!match?.index || match.index <= 0) return null;
-  return title.slice(0, match.index).replace(/[,\s]+$/, "").trim();
+  return stripDatePhrase(title);
 }
 
 export function looksLikeDateTimePhrase(text: string): boolean {
@@ -384,20 +670,21 @@ export function looksLikeDateTimePhrase(text: string): boolean {
 
   const hasWeekday = new RegExp(`\\b(?:${WEEKDAY_PATTERN})\\b`, "i").test(t);
   const hasRelative = /\b(today|tonight|tomorrow|next\s+week|next\s+month|next\s+year)\b/i.test(t);
-  const hasModifier = /\b(next|last|past|previous)\b/i.test(t);
+  const hasModifier = /\b(this|next|last|past|previous)\b/i.test(t);
   const hasMonthDay = new RegExp(`\\b(?:${MONTH_PATTERN})\\s+\\d{1,2}`, "i").test(t);
   const hasNamedMonth = new RegExp(`\\bnext\\s+(?:${MONTH_PATTERN})\\b`, "i").test(t);
+  const hasVagueTime = new RegExp(`\\b(?:${VAGUE_TIME_PATTERN})\\b`, "i").test(t);
   const hasTime = new RegExp(TIME_PATTERN, "i").test(t);
   const hasGlue = /\b(on|by|at|before|in)\b/i.test(t);
 
   return (
     (hasWeekday || hasRelative || hasMonthDay || hasNamedMonth) &&
-    (hasTime || hasGlue || hasRelative || hasMonthDay || hasNamedMonth || hasModifier)
+    (hasTime || hasVagueTime || hasGlue || hasRelative || hasMonthDay || hasNamedMonth || hasModifier)
   );
 }
 
 export function isValidCleanTitleRemoval(original: string, clean: string): boolean {
-  const stripped = stripTrailingDatePhrase(original);
+  const stripped = stripDatePhrase(original);
   if (stripped) return clean.trim().toLowerCase() === stripped.toLowerCase();
 
   const trimmedOriginal = original.trim();
@@ -420,84 +707,13 @@ export function tryParseDueDateFromTitle(
   timeZone: string
 ): { title: string; dueAt: Date } | null {
   const trimmed = title.trim();
-  const weekdayMatch = trimmed.match(WEEKDAY_TRAILING_RE);
-  const nextWeekMatch = weekdayMatch ? null : trimmed.match(NEXT_WEEK_TRAILING_RE);
-  const nextPeriodMatch =
-    weekdayMatch || nextWeekMatch ? null : trimmed.match(NEXT_PERIOD_TRAILING_RE);
-  const relativeMatch =
-    weekdayMatch || nextWeekMatch || nextPeriodMatch ? null : trimmed.match(RELATIVE_TRAILING_RE);
-  const calendarMatch =
-    weekdayMatch || nextWeekMatch || nextPeriodMatch || relativeMatch
-      ? null
-      : trimmed.match(CALENDAR_TRAILING_RE);
-  const match = weekdayMatch ?? nextWeekMatch ?? nextPeriodMatch ?? relativeMatch ?? calendarMatch;
-  if (!match?.index || match.index <= 0) return null;
-
-  const cleanTitle = trimmed.slice(0, match.index).replace(/[,\s]+$/, "").trim();
-  if (!cleanTitle) return null;
-
-  if (weekdayMatch) {
-    const dueAt = resolveWeekdayDueDate(
-      weekdayMatch[2],
-      weekdayMatch[1],
-      weekdayMatch[3],
-      referenceDate,
-      timeZone
-    );
-    if (!dueAt) return null;
-    return { title: cleanTitle, dueAt };
-  }
-
-  if (nextWeekMatch) {
-    const dueAt = resolveNextWeek(nextWeekMatch[1], referenceDate, timeZone);
-    return { title: cleanTitle, dueAt };
-  }
-
-  if (nextPeriodMatch) {
-    const token = nextPeriodMatch[1].toLowerCase();
-    const timeToken = nextPeriodMatch[2];
-    let dueAt: Date | null = null;
-    if (token === "month") {
-      dueAt = resolveNextMonth(timeToken, referenceDate, timeZone);
-    } else if (token === "year") {
-      dueAt = resolveNextYear(timeToken, referenceDate, timeZone);
-    } else {
-      dueAt = resolveNextNamedMonth(nextPeriodMatch[1], timeToken, referenceDate, timeZone);
-    }
-    if (!dueAt) return null;
-    return { title: cleanTitle, dueAt };
-  }
-
-  if (calendarMatch) {
-    const month = monthNameToNumber(calendarMatch[1]);
-    const day = Number(calendarMatch[2]);
-    const parsedTime = defaultDueTime(calendarMatch[3]);
-    if (month === null) return null;
-    const dueAt = resolveCalendarDate(
-      month,
-      day,
-      parsedTime.hour,
-      parsedTime.minute,
-      referenceDate,
-      timeZone
-    );
-    if (!dueAt) return null;
-    return { title: cleanTitle, dueAt };
-  }
-
-  const parsedTime = defaultDueTime(relativeMatch![2]);
-  const dueAt = resolveRelativeDay(
-    relativeMatch![1],
-    parsedTime.hour,
-    parsedTime.minute,
-    referenceDate,
-    timeZone
-  );
-  return { title: cleanTitle, dueAt };
+  const match = extractDatePhrase(trimmed);
+  if (!match) return null;
+  return resolveDatePhraseMatch(match, referenceDate, timeZone);
 }
 
 function safeCleanTitle(original: string, llmClean: string | null | undefined): string | null {
-  const stripped = stripTrailingDatePhrase(original);
+  const stripped = stripDatePhrase(original);
   if (stripped && stripped !== original.trim()) return stripped;
 
   const clean = llmClean?.trim();
@@ -521,9 +737,16 @@ export function finalizeDueDateParse(
   let dueAt = parseIsoDueDate(payload.dueAt);
   if (!dueAt) return { title: trimmed, dueAt: null };
 
-  const match = trimmed.match(WEEKDAY_TRAILING_RE);
-  if (match?.[2]) {
-    const corrected = resolveWeekdayDueDate(match[2], match[1], match[3], referenceDate, timeZone);
+  const phrase = extractDatePhrase(trimmed);
+  if (phrase?.kind === "weekday") {
+    const { modifier, weekday, timeToken } = getWeekdayFields(phrase);
+    const corrected = resolveWeekdayDueDate(
+      weekday,
+      modifier,
+      timeToken,
+      referenceDate,
+      timeZone
+    );
     if (corrected) dueAt = corrected;
   }
 

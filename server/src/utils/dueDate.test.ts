@@ -131,4 +131,74 @@ describe("dueDate utils", () => {
     expect(result?.dueAt.getUTCDate()).toBe(1);
     expect(result?.dueAt.getUTCHours()).toBe(9);
   });
+
+  it("parses leading date phrase with comma separator", () => {
+    const reference = new Date("2026-05-28T12:00:00Z");
+    const result = tryParseDueDateFromTitle(
+      "This Friday at 7pm, lunch with parents",
+      reference,
+      "UTC"
+    );
+    expect(result?.title).toBe("lunch with parents");
+    expect(result?.dueAt.getUTCDay()).toBe(5);
+    expect(result?.dueAt.getUTCHours()).toBe(19);
+  });
+
+  it("parses leading date phrase with space boundary", () => {
+    const reference = new Date("2026-05-28T12:00:00Z");
+    const result = tryParseDueDateFromTitle(
+      "This Friday at 7pm lunch with parents",
+      reference,
+      "UTC"
+    );
+    expect(result?.title).toBe("lunch with parents");
+    expect(result?.dueAt.getUTCHours()).toBe(19);
+  });
+
+  it("parses trailing this weekday", () => {
+    const reference = new Date("2026-05-28T12:00:00Z");
+    const result = tryParseDueDateFromTitle(
+      "lunch with parents this Friday at 7pm",
+      reference,
+      "UTC"
+    );
+    expect(result?.title).toBe("lunch with parents");
+    expect(result?.dueAt.getUTCDay()).toBe(5);
+    expect(result?.dueAt.getUTCHours()).toBe(19);
+  });
+
+  it("parses vague noon time on trailing weekday", () => {
+    const reference = new Date("2026-05-27T12:00:00Z");
+    const result = tryParseDueDateFromTitle("pizza with friends Thursday at noon", reference, "UTC");
+    expect(result?.title).toBe("pizza with friends");
+    expect(result?.dueAt.getUTCDay()).toBe(4);
+    expect(result?.dueAt.getUTCHours()).toBe(12);
+  });
+
+  it("maps vague time words to concrete hours", () => {
+    const reference = new Date("2026-05-27T12:00:00Z");
+    const cases = [
+      { title: "Task Monday morning", hour: 9 },
+      { title: "Task Tuesday afternoon", hour: 14 },
+      { title: "Task Wednesday evening", hour: 18 },
+      { title: "Task Thursday night", hour: 21 },
+    ];
+    for (const { title, hour } of cases) {
+      const result = tryParseDueDateFromTitle(title, reference, "UTC");
+      expect(result?.dueAt.getUTCHours()).toBe(hour);
+    }
+  });
+
+  it("does not parse ambiguous titles without time or separator", () => {
+    const reference = new Date("2026-05-27T12:00:00Z");
+    expect(tryParseDueDateFromTitle("Friday report", reference, "UTC")).toBeNull();
+  });
+
+  it("parses leading relative with vague time", () => {
+    const reference = new Date("2026-05-27T12:00:00Z");
+    const result = tryParseDueDateFromTitle("Tomorrow morning, buy milk", reference, "UTC");
+    expect(result?.title).toBe("buy milk");
+    expect(result?.dueAt.getUTCDate()).toBe(28);
+    expect(result?.dueAt.getUTCHours()).toBe(9);
+  });
 });
